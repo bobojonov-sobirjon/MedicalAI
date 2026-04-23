@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import authenticate
+from django.db import IntegrityError
 from rest_framework import serializers
 
 from .models import CustomUser
@@ -50,6 +51,18 @@ class RegisterSerializer(serializers.Serializer):
             attrs["phone_number"] = phone
         if username:
             attrs["username"] = username
+
+        # Proactive uniqueness checks to return 400 instead of 500 on DB constraint errors.
+        errors = {}
+        if attrs.get("email") and CustomUser.objects.filter(email__iexact=attrs["email"]).exists():
+            errors["email"] = "Пользователь с таким email уже существует."
+        if attrs.get("username") and CustomUser.objects.filter(username=attrs["username"]).exists():
+            errors["username"] = "Пользователь с таким username уже существует."
+        if attrs.get("phone_number") and CustomUser.objects.filter(phone_number=attrs["phone_number"]).exists():
+            errors["phone_number"] = "Пользователь с таким телефоном уже существует."
+        if errors:
+            raise serializers.ValidationError(errors)
+
         return attrs
 
     def validate_password(self, value: str) -> str:
@@ -59,7 +72,13 @@ class RegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         password = validated_data.pop("password")
-        user = CustomUser.objects.create_user(**validated_data)
+        try:
+            user = CustomUser.objects.create_user(**validated_data)
+        except IntegrityError:
+            # Safety net: if a concurrent request created the same user, map to 400.
+            raise serializers.ValidationError(
+                {"detail": "Пользователь с такими данными уже существует. Измените email/username/телефон."}
+            )
         user.set_password(password)
         user.save(update_fields=["password"])
         return user
