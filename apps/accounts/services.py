@@ -24,6 +24,55 @@ class SocialProfile:
 
 class FirebaseAuthService:
     @staticmethod
+    def _service_account_from_env() -> dict | None:
+        """
+        Build a Firebase service account dict from env vars.
+
+        Expected env keys (matching Google service account JSON):
+        - FIREBASE_TYPE
+        - FIREBASE_PROJECT_ID
+        - FIREBASE_PRIVATE_KEY_ID
+        - FIREBASE_PRIVATE_KEY (may contain literal '\\n')
+        - FIREBASE_CLIENT_EMAIL
+        - FIREBASE_CLIENT_ID
+        - FIREBASE_AUTH_URI
+        - FIREBASE_TOKEN_URI
+        - FIREBASE_AUTH_PROVIDER_CERT_URL
+        - FIREBASE_CLIENT_CERT_URL
+        """
+
+        def _get(name: str) -> str:
+            return (os.getenv(name) or "").strip()
+
+        private_key = _get("FIREBASE_PRIVATE_KEY")
+        # dotenv often stores multiline keys with literal "\n"
+        if private_key:
+            if (private_key.startswith('"') and private_key.endswith('"')) or (
+                private_key.startswith("'") and private_key.endswith("'")
+            ):
+                private_key = private_key[1:-1]
+            private_key = private_key.replace("\\n", "\n")
+
+        service_account = {
+            "type": _get("FIREBASE_TYPE"),
+            "project_id": _get("FIREBASE_PROJECT_ID"),
+            "private_key_id": _get("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": private_key,
+            "client_email": _get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": _get("FIREBASE_CLIENT_ID"),
+            "auth_uri": _get("FIREBASE_AUTH_URI"),
+            "token_uri": _get("FIREBASE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": _get("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+            "client_x509_cert_url": _get("FIREBASE_CLIENT_CERT_URL"),
+        }
+
+        # Require a minimal set; otherwise treat as not configured.
+        required = ("type", "project_id", "private_key", "client_email")
+        if any(not (service_account.get(k) or "").strip() for k in required):
+            return None
+        return service_account
+
+    @staticmethod
     def _get_app() -> firebase_admin.App:
         """
         Initialize Firebase Admin SDK once.
@@ -31,6 +80,7 @@ class FirebaseAuthService:
         Env options:
         - FIREBASE_SERVICE_ACCOUNT_FILE: path to serviceAccountKey.json
         - FIREBASE_SERVICE_ACCOUNT_JSON: raw JSON content (string)
+        - FIREBASE_* keys: individual fields (type, project_id, private_key, etc.)
         """
         if firebase_admin._apps:
             return firebase_admin.get_app()
@@ -43,9 +93,14 @@ class FirebaseAuthService:
         elif sa_json:
             cred = firebase_credentials.Certificate(json.loads(sa_json))
         else:
-            raise ValueError(
-                "Firebase is not configured. Set FIREBASE_SERVICE_ACCOUNT_FILE or FIREBASE_SERVICE_ACCOUNT_JSON"
-            )
+            sa_env = FirebaseAuthService._service_account_from_env()
+            if sa_env:
+                cred = firebase_credentials.Certificate(sa_env)
+            else:
+                raise ValueError(
+                    "Firebase is not configured. Set FIREBASE_SERVICE_ACCOUNT_FILE, "
+                    "FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_* service account env vars"
+                )
 
         return firebase_admin.initialize_app(cred)
 
