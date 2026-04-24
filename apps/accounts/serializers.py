@@ -130,14 +130,13 @@ class UserMeSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "avatar",
-            "nickname",
             "gender",
             "city",
             "date_of_birth",
             "height_cm",
             "weight_kg",
         )
-        read_only_fields = ("id", "username", "email", "phone_number")
+        read_only_fields = ("id", "email", "phone_number")
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
@@ -148,7 +147,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "last_name",
             "avatar",
             "phone_number",
-            "nickname",
+            "username",
             "gender",
             "city",
             "date_of_birth",
@@ -160,7 +159,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "last_name": {"help_text": "Last name / surname."},
             "avatar": {"help_text": "Avatar image (multipart)."},
             "phone_number": {"help_text": "Phone number."},
-            "nickname": {"help_text": "Display nickname."},
+            "username": {"help_text": "Username (unique)."},
             "gender": {"help_text": "male | female | other"},
             "city": {"help_text": "City name."},
             "date_of_birth": {"help_text": "Date of birth (YYYY-MM-DD)."},
@@ -168,10 +167,15 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "weight_kg": {"help_text": "Weight in kg (optional)."},
         }
 
-    def validate_nickname(self, value):
-        if value and len(value) > 64:
-            raise serializers.ValidationError("Ник слишком длинный.")
-        return (value or "").strip()
+    def validate_username(self, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            raise serializers.ValidationError("Username обязателен.")
+        if len(v) > 150:
+            raise serializers.ValidationError("Username слишком длинный.")
+        if CustomUser.objects.filter(username=v).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError("Пользователь с таким username уже существует.")
+        return v
 
 
 class ForgotPasswordRequestSerializer(serializers.Serializer):
