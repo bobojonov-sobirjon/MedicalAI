@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import authenticate
+from django.contrib.auth.hashers import make_password
 from django.db import IntegrityError
 from rest_framework import serializers
 
@@ -12,7 +13,7 @@ class RegisterSerializer(serializers.Serializer):
         required=True,
         allow_null=False,
         allow_blank=False,
-        help_text="Email пользователя (обязательно). Должен быть уникальным.",
+        help_text="Эл. почта пользователя (обязательно). Должна быть уникальной.",
     )
     phone_number = serializers.CharField(
         required=False,
@@ -24,7 +25,7 @@ class RegisterSerializer(serializers.Serializer):
         required=True,
         allow_null=False,
         allow_blank=False,
-        help_text="Username (обязательно). Уникальный логин пользователя.",
+        help_text="Логин (обязательно). Уникальное имя пользователя.",
     )
     password = serializers.CharField(
         required=True,
@@ -87,7 +88,7 @@ class RegisterSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(
         required=True,
-        help_text="Логин: username или email или phone_number.",
+        help_text="Логин: username (логин) или email (почта) или phone_number (телефон).",
     )
     password = serializers.CharField(required=True, write_only=True, help_text="Пароль.")
 
@@ -127,6 +128,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "username",
             "email",
             "phone_number",
+            "nickname",
             "first_name",
             "last_name",
             "avatar",
@@ -135,16 +137,22 @@ class UserMeSerializer(serializers.ModelSerializer):
             "date_of_birth",
             "height_cm",
             "weight_kg",
+            "chronic_diseases",
+            "had_covid",
+            "useful_tips_subscribed",
         )
         read_only_fields = ("id", "email", "phone_number")
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
+    pin_code = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True, max_length=12)
+
     class Meta:
         model = CustomUser
         fields = (
             "first_name",
             "last_name",
+            "nickname",
             "avatar",
             "phone_number",
             "username",
@@ -153,18 +161,26 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "date_of_birth",
             "height_cm",
             "weight_kg",
+            "chronic_diseases",
+            "had_covid",
+            "useful_tips_subscribed",
+            "pin_code",
         )
         extra_kwargs = {
-            "first_name": {"help_text": "First name."},
-            "last_name": {"help_text": "Last name / surname."},
-            "avatar": {"help_text": "Avatar image (multipart)."},
-            "phone_number": {"help_text": "Phone number."},
-            "username": {"help_text": "Username (unique)."},
+            "first_name": {"help_text": "Имя."},
+            "last_name": {"help_text": "Фамилия."},
+            "nickname": {"help_text": "Ник (латиница и цифры)."},
+            "avatar": {"help_text": "Аватар (multipart)."},
+            "phone_number": {"help_text": "Номер телефона."},
+            "username": {"help_text": "Логин (уникальный)."},
             "gender": {"help_text": "male | female | other"},
-            "city": {"help_text": "City name."},
-            "date_of_birth": {"help_text": "Date of birth (YYYY-MM-DD)."},
-            "height_cm": {"help_text": "Height in cm."},
-            "weight_kg": {"help_text": "Weight in kg (optional)."},
+            "city": {"help_text": "Город проживания."},
+            "date_of_birth": {"help_text": "Дата рождения (YYYY-MM-DD)."},
+            "height_cm": {"help_text": "Рост в сантиметрах."},
+            "weight_kg": {"help_text": "Вес в килограммах (опционально)."},
+            "chronic_diseases": {"help_text": "Хронические заболевания (текст)."},
+            "had_covid": {"help_text": "null | true | false"},
+            "useful_tips_subscribed": {"help_text": "Подписка на полезное (ТЗ §7.12.2)."},
         }
 
     def validate_username(self, value: str) -> str:
@@ -177,13 +193,31 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Пользователь с таким username уже существует.")
         return v
 
+    def validate_pin_code(self, value: str | None) -> str:
+        if value is None:
+            return ""
+        v = str(value).strip()
+        if not v:
+            return ""
+        if not v.isdigit() or not (4 <= len(v) <= 8):
+            raise serializers.ValidationError("Пин-код: 4–8 цифр.")
+        return v
+
+    def update(self, instance, validated_data):
+        pin = validated_data.pop("pin_code", None)
+        user = super().update(instance, validated_data)
+        if pin:
+            user.pin_code_hash = make_password(pin)
+            user.save(update_fields=["pin_code_hash"])
+        return user
+
 
 class ForgotPasswordRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True, help_text="Email аккаунта; код будет отправлен на этот адрес.")
+    email = serializers.EmailField(required=True, help_text="Эл. почта аккаунта; код будет отправлен на этот адрес.")
 
 
 class ForgotPasswordVerifySerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True, help_text="Тот же email, что и на шаге отправки кода.")
+    email = serializers.EmailField(required=True, help_text="Та же эл. почта, что и на шаге отправки кода.")
     code = serializers.CharField(required=True, help_text="6-значный код из письма.")
 
     def validate_code(self, value: str) -> str:

@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.db.models import Q
+
+from apps.catalog.models import Disease
+from apps.catalog.models import BodyPart
+from apps.catalog.models import Symptom
+from apps.core.gemini import GeminiConfigError, generate_json
+from apps.medic.models import FaqItem
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+_SYSTEM = """Ты медицинский информационный помощник в приложении MedicAI (не врач).
+Правила:
+- Не ставь окончательный диагноз. Используй формулировки «возможно», «стоит исключить».
+- Обязательно укажи, что нужна очная консультация врача.
+- Ответ строго JSON-объект на русском по схеме из запроса пользователя.
+- Учитывай только переданный контекст справочника и симптомы; не выдумывай редкие болезни без оснований.
+"""
+
+
+def _catalog_slice(symptoms: str, *, limit: int = 14) -> list[dict[str, Any]]:
+    q = symptoms.strip()
+    if len(q) < 2:
+        return []
+    tokens = [t for t in q.replace(",", " ").split() if len(t) >= 3][:8]
+    qs = Disease.objects.all()
+    cond = Q()
+    for t in tokens:
+        cond |= Q(name__icontains=t) | Q(description__icontains=t)
+    if not tokens:
+        cond = Q(name__icontains=q[:64]) | Q(description__icontains=q[:200])
+    rows = list(qs.filter(cond).distinct().order_by("name")[:limit])
+    if not rows and q:
+        rows = list(Disease.objects.filter(Q(name__icontains=q[:80]) | Q(description__icontains=q[:200])).order_by("name")[:limit])
+    return [{"id": d.id, "name": d.name, "description": (d.description or "")[:1200]} for d in rows]
+
+
+def _faq_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    q = symptoms.strip()
+    if len(q) < 2:
+        return []
+    rows = list(
+        FaqItem.objects.filter(is_active=True)
+        .filter(Q(question__icontains=q) | Q(answer__icontains=q))[:limit]
+    )
+    return [{"id": f.id, "question": f.question, "answer": (f.answer or "")[:800]} for f in rows]
+
+
+def _symptoms_text_from_ids(symptom_ids: list[int]) -> tuple[str, list[dict[str, Any]]]:
+    ids = [int(x) for x in symptom_ids if isinstance(x, int) or str(x).isdigit()]
+    ids = [x for x in ids if x > 0][:60]
+    if not ids:
+        return "", []
+    rows = list(Symptom.objects.filter(id__in=ids).order_by("name"))
+    by_id = {s.id: s for s in rows}
+    ordered = [by_id[i] for i in ids if i in by_id]
+    names = [s.name for s in ordered]
+    payload = [{"id": s.id, "name": s.name, "aliases": s.aliases} for s in ordered]
+    return ", ".join(names), payload
+
+
+def _body_parts_from_ids(body_part_ids: list[int]) -> tuple[str, list[dict[str, Any]]]:
+    ids = [int(x) for x in body_part_ids if isinstance(x, int) or str(x).isdigit()]
+    ids = [x for x in ids if x > 0][:40]
+    if not ids:
+        return "не указано", []
+    rows = list(BodyPart.objects.filter(id__in=ids).order_by("sort_order", "label"))
+    by_id = {b.id: b for b in rows}
+    ordered = [by_id[i] for i in ids if i in by_id]
+    labels = [b.label for b in ordered]
+    payload = [{"id": b.id, "code": b.code, "label": b.label} for b in ordered]
+    return (", ".join(labels) if labels else "не указано"), payload
+
+
+def _user_context_line(user: User) -> str:
+    parts: list[str] = []
+    if user.get_full_name():
+        parts.append(f"Имя: {user.get_full_name()}")
+    if getattr(user, "gender", None):
+        parts.append(f"Пол: {user.get_gender_display() if hasattr(user, 'get_gender_display') else user.gender}")
+    if getattr(user, "date_of_birth", None):
+        parts.append(f"Дата рождения: {user.date_of_birth}")
+    if getattr(user, "city", None):
+        parts.append(f"Город: {user.city}")
+    return "; ".join(parts) if parts else "Профиль без дополнительных полей."
+
+
+def run_diagnosis(
+    *,
+    user: User,
+    symptom_ids: list[int],
+    symptoms_text: str,
+    body_part_ids: list[int],
+    temperature_c: float | None,
+    blood_pressure: str,
+) -> dict[str, Any]:
+    symptoms_from_ids, symptoms_resolved = _symptoms_text_from_ids(symptom_ids)
+    body_parts_s, body_parts_resolved = _body_parts_from_ids(body_part_ids)
+    combined_symptoms = "\n".join([s for s in [symptoms_from_ids.strip(), (symptoms_text or "").strip()] if s])
+
+    catalog = _catalog_slice(combined_symptoms)
+    faq = _faq_slice(combined_symptoms)
+    catalog_json = json.dumps(catalog, ensure_ascii=False)
+    faq_json = json.dumps(faq, ensure_ascii=False)
+    temp_s = f"{temperature_c} °C" if temperature_c is not None else "не указано"
+    bp_s = blood_pressure or "не указано"
+
+    schema_hint = """Верни JSON:
+{
+  "summary": "краткое резюме для пользователя (2-5 предложений)",
+  "possible_conditions": [{"name": "строка", "rationale": "почему возможно", "urgency": "routine|soon|urgent"}],
+  "match_catalog_ids": [числа — id из переданного справочника, которые наиболее релевантны],
+  "suggested_next_steps": ["шаги для пользователя"],
+  "disclaimer": "обязательное напоминание про врача и что это не диагноз"
+}"""
+
+    user_prompt = f"""Профиль: {_user_context_line(user)}
+Части тела: {body_parts_s}
+Температура: {temp_s}
+Давление: {bp_s}
+Симптомы (из справочника по ID):
+{symptoms_from_ids or "не указано"}
+
+Доп. симптомы/уточнения (текст):
+{(symptoms_text or "").strip() or "не указано"}
+
+Фрагмент справочника заболеваний (JSON):
+{catalog_json}
+
+Фрагмент базы вопросов/ответов (JSON, ТЗ §6.1):
+{faq_json}
+
+{schema_hint}"""
+
+    try:
+        ai = generate_json(_SYSTEM, user_prompt, temperature=0.25)
+        ai_error: str | None = None
+    except (GeminiConfigError, RuntimeError, OSError, ValueError, Exception) as e:
+        logger.exception("AI diagnose failed: %s", e)
+        ai_error = f"{type(e).__name__}: {e}"
+        ai = {
+            "summary": "ИИ временно недоступен или вернул неожиданный ответ. Ниже — совпадения из локального справочника.",
+            "possible_conditions": [],
+            "match_catalog_ids": [c["id"] for c in catalog],
+            "suggested_next_steps": ["Обратитесь к врачу при ухудшении состояния."],
+            "disclaimer": "Информация не является медицинской консультацией.",
+        }
+
+    match_ids = ai.get("match_catalog_ids") or []
+    if not isinstance(match_ids, list):
+        match_ids = []
+    match_ids = [int(x) for x in match_ids if str(x).isdigit()][:20]
+    matched = [c for c in catalog if c["id"] in match_ids]
+    if not matched and catalog:
+        matched = catalog[:5]
+
+    return {
+        "symptoms_resolved": symptoms_resolved,
+        "body_parts_resolved": body_parts_resolved,
+        "catalog_candidates": catalog,
+        "faq_hits": faq,
+        "catalog_matched": matched,
+        "ai": {
+            "summary": ai.get("summary", ""),
+            "possible_conditions": ai.get("possible_conditions", []),
+            "suggested_next_steps": ai.get("suggested_next_steps", []),
+            "disclaimer": ai.get("disclaimer", ""),
+        },
+        **({"ai_error": ai_error} if getattr(settings, "DEBUG", False) and ai_error else {}),
+    }

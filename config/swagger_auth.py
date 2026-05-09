@@ -1,61 +1,68 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
-from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from apps.accounts.models import CustomUser
-from apps.accounts.services import SMSService
-
-
 @method_decorator(csrf_exempt, name='dispatch')
 class SwaggerTokenView(APIView):
     """
-    Swagger OAuth2 token endpoint - email-only authentication (SMS-based)
+    Точка выдачи токена для Swagger (OAuth2 password): вход по email, без проверки пароля.
     """
+
     permission_classes = [AllowAny]
-    
+
     @extend_schema(
-        summary="OAuth2 Token Endpoint",
-        description="OAuth2 password flow for Swagger - email only authentication",
+        summary="Получить токен (для Swagger UI)",
+        description=(
+            "Совместимость с OAuth2 password flow в Swagger: передайте grant_type=password и username=email. "
+            "Поле password игнорируется; при отсутствии пользователя с таким email он будет создан."
+        ),
         request={
-            'application/x-www-form-urlencoded': {
-                'type': 'object',
-                'properties': {
-                    'grant_type': {'type': 'string', 'example': 'password'},
-                    'username': {'type': 'string', 'format': 'email', 'example': 'user@example.com'},
-                    'password': {'type': 'string', 'example': 'password'},
+            "application/x-www-form-urlencoded": {
+                "type": "object",
+                "properties": {
+                    "grant_type": {"type": "string", "example": "password", "description": "Должно быть password"},
+                    "username": {
+                        "type": "string",
+                        "format": "email",
+                        "example": "user@example.com",
+                        "description": "Email пользователя",
+                    },
+                    "password": {
+                        "type": "string",
+                        "example": "password",
+                        "description": "Не используется (оставлено для совместимости с формой OAuth2)",
+                    },
                 },
-                'required': ['grant_type', 'username']
+                "required": ["grant_type", "username"],
             }
         },
         responses={
             200: {
-                'type': 'object',
-                'properties': {
-                    'access_token': {'type': 'string'},
-                    'refresh_token': {'type': 'string'},
-                    'token_type': {'type': 'string', 'example': 'Bearer'},
-                    'expires_in': {'type': 'integer', 'example': 604800},
-                    'scope': {'type': 'string', 'example': 'read write'}
-                }
+                "type": "object",
+                "properties": {
+                    "access_token": {"type": "string", "description": "JWT доступа"},
+                    "refresh_token": {"type": "string", "description": "JWT обновления"},
+                    "token_type": {"type": "string", "example": "Bearer"},
+                    "expires_in": {"type": "integer", "example": 604800, "description": "Срок жизни access_token в секундах"},
+                    "scope": {"type": "string", "example": "read write"},
+                },
             },
             400: {
-                'type': 'object',
-                'properties': {
-                    'error': {'type': 'string'},
-                    'error_description': {'type': 'string'}
-                }
-            }
+                "type": "object",
+                "properties": {
+                    "error": {"type": "string"},
+                    "error_description": {"type": "string"},
+                },
+            },
         },
-        tags=['Authentication']
+        tags=["Авторизация"],
     )
     def post(self, request):
-        """OAuth2 password flow for Swagger - email only"""
+        """Выдача JWT для авторизации запросов из Swagger."""
         username = request.data.get('username')  # This will be the email
         password = request.data.get('password', '')  # Not used, but kept for compatibility
         grant_type = request.data.get('grant_type', 'password')

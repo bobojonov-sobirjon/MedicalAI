@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.accounts.models import CustomUser, FamilyLink
 from apps.catalog.models import Disease, Drug
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
+
+
+class UserMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ("id", "first_name", "last_name", "username")
 
 
 class DoctorVisitUpsertSerializer(serializers.ModelSerializer):
@@ -68,6 +75,7 @@ class DrugMiniSerializer(serializers.ModelSerializer):
 
 class DiseaseRecordListSerializer(serializers.ModelSerializer):
     disease = DiseaseMiniSerializer(read_only=True)
+    subject_user = UserMiniSerializer(read_only=True)
 
     class Meta:
         model = DiseaseRecord
@@ -76,6 +84,7 @@ class DiseaseRecordListSerializer(serializers.ModelSerializer):
             "date_of_illness",
             "title",
             "disease",
+            "subject_user",
             "created_at",
             "updated_at",
         )
@@ -83,6 +92,7 @@ class DiseaseRecordListSerializer(serializers.ModelSerializer):
 
 class DiseaseRecordDetailSerializer(serializers.ModelSerializer):
     disease = DiseaseMiniSerializer(read_only=True)
+    subject_user = UserMiniSerializer(read_only=True)
     drugs = DrugMiniSerializer(read_only=True, many=True)
     doctor_visits = serializers.SerializerMethodField()
     analyses = serializers.SerializerMethodField()
@@ -95,6 +105,7 @@ class DiseaseRecordDetailSerializer(serializers.ModelSerializer):
             "date_of_illness",
             "title",
             "disease",
+            "subject_user",
             "symptoms",
             "drugs",
             "doctor_visits",
@@ -117,6 +128,13 @@ class DiseaseRecordDetailSerializer(serializers.ModelSerializer):
 class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
     disease_id = serializers.PrimaryKeyRelatedField(
         source="disease", queryset=Disease.objects.all(), required=False, allow_null=True
+    )
+    subject_user_id = serializers.PrimaryKeyRelatedField(
+        source="subject_user",
+        queryset=CustomUser.objects.none(),
+        required=False,
+        allow_null=True,
+        help_text="Кому относится запись: вы или привязанный профиль. По умолчанию — вы.",
     )
     drug_ids = serializers.PrimaryKeyRelatedField(
         source="drugs", queryset=Drug.objects.all(), many=True, required=False
@@ -143,6 +161,7 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
             "date_of_illness",
             "title",
             "disease_id",
+            "subject_user_id",
             "symptoms",
             "drug_ids",
             "doctor_visits",
@@ -154,6 +173,30 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
             "title": {"help_text": "Disease title (free text)."},
             "symptoms": {"help_text": "Symptoms description (free text)."},
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        field = self.fields.get("subject_user_id")
+        if field and request and request.user.is_authenticated:
+            member_ids = list(
+                FamilyLink.objects.filter(owner=request.user).values_list("member_id", flat=True)
+            )
+            allowed = [request.user.pk] + member_ids
+            field.queryset = CustomUser.objects.filter(pk__in=allowed)
+
+    def validate_subject_user_id(self, value: CustomUser | None):
+        if value is None:
+            return value
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Нет контекста пользователя.")
+        u = request.user
+        if value.pk == u.pk:
+            return value
+        if FamilyLink.objects.filter(owner=u, member=value).exists():
+            return value
+        raise serializers.ValidationError("Нельзя привязать эту запись к выбранному пользователю.")
 
 
 class DoctorVisitSerializer(serializers.ModelSerializer):

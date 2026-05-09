@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from django.db.models import Q
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiParameter
 from django.db import transaction
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status
+
+from apps.core.gemini import GeminiConfigError, transcribe_lab_image
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
 from .serializers import (
@@ -33,7 +35,7 @@ class MyDiseaseRecordListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["My Health"],
+        tags=["История здоровья"],
         summary="Список моих записей о болезни",
         description="Возвращает только записи, принадлежащие текущему пользователю.",
         parameters=[
@@ -54,7 +56,7 @@ class MyDiseaseRecordListCreateView(APIView):
         return Response(DiseaseRecordListSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health"],
+        tags=["История здоровья"],
         summary="Создать запись о болезни",
         description=(
             "Создаёт запись о болезни для текущего пользователя.\n\n"
@@ -65,7 +67,7 @@ class MyDiseaseRecordListCreateView(APIView):
         responses={201: DiseaseRecordDetailSerializer},
     )
     def post(self, request):
-        s = DiseaseRecordUpsertSerializer(data=request.data)
+        s = DiseaseRecordUpsertSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         with transaction.atomic():
             nested_visits = s.validated_data.pop("doctor_visits", None)
@@ -82,7 +84,10 @@ class MyDiseaseRecordListCreateView(APIView):
                 upsert_analyses(record, nested_analyses)
             if nested_prescriptions is not None:
                 upsert_prescriptions(record, nested_prescriptions)
-        return Response(DiseaseRecordDetailSerializer(record).data, status=status.HTTP_201_CREATED)
+        return Response(
+            DiseaseRecordDetailSerializer(record, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class MyDiseaseRecordDetailView(APIView):
@@ -96,7 +101,7 @@ class MyDiseaseRecordDetailView(APIView):
         )
 
     @extend_schema(
-        tags=["My Health"],
+        tags=["История здоровья"],
         summary="Получить мою запись о болезни",
         description="Возвращает одну запись текущего пользователя. Включает вложенные doctor_visits/analyses/prescriptions.",
         responses=DiseaseRecordDetailSerializer,
@@ -106,7 +111,7 @@ class MyDiseaseRecordDetailView(APIView):
         return Response(DiseaseRecordDetailSerializer(record, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health"],
+        tags=["История здоровья"],
         summary="Обновить мою запись о болезни",
         description=(
             "Частичное обновление записи текущего пользователя.\n\n"
@@ -119,7 +124,12 @@ class MyDiseaseRecordDetailView(APIView):
     )
     def patch(self, request, pk: int):
         record = self._get_obj(request, pk)
-        s = DiseaseRecordUpsertSerializer(instance=record, data=request.data, partial=True)
+        s = DiseaseRecordUpsertSerializer(
+            instance=record,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         s.is_valid(raise_exception=True)
         with transaction.atomic():
             nested_visits = s.validated_data.pop("doctor_visits", None)
@@ -136,9 +146,9 @@ class MyDiseaseRecordDetailView(APIView):
                 upsert_analyses(record, nested_analyses)
             if nested_prescriptions is not None:
                 upsert_prescriptions(record, nested_prescriptions)
-        return Response(DiseaseRecordDetailSerializer(record).data)
+        return Response(DiseaseRecordDetailSerializer(record, context={"request": request}).data)
 
-    @extend_schema(tags=["My Health"], summary="Удалить мою запись о болезни", description="Удаляет запись текущего пользователя.")
+    @extend_schema(tags=["История здоровья"], summary="Удалить мою запись о болезни", description="Удаляет запись текущего пользователя.")
     def delete(self, request, pk: int):
         DiseaseRecord.objects.filter(pk=pk, user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -151,7 +161,7 @@ class MyDoctorVisitListCreateView(APIView):
         return DiseaseRecord.objects.get(pk=record_id, user=request.user)
 
     @extend_schema(
-        tags=["My Health Doctor Visits"],
+        tags=["Визиты врача"],
         summary="Список посещений врача",
         description="Возвращает посещения врача для одной записи болезни (принадлежит текущему пользователю).",
         responses=DoctorVisitSerializer(many=True),
@@ -162,7 +172,7 @@ class MyDoctorVisitListCreateView(APIView):
         return Response(DoctorVisitSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Doctor Visits"],
+        tags=["Визиты врача"],
         summary="Добавить посещение врача",
         description="Создаёт новое посещение врача внутри указанной записи болезни (должна принадлежать текущему пользователю).",
         request=DoctorVisitUpsertSerializer,
@@ -170,7 +180,7 @@ class MyDoctorVisitListCreateView(APIView):
     )
     def post(self, request, record_id: int):
         record = self._get_record(request, record_id)
-        s = DoctorVisitUpsertSerializer(data=request.data)
+        s = DoctorVisitUpsertSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         obj = s.save(record=record)
         return Response(DoctorVisitSerializer(obj).data, status=status.HTTP_201_CREATED)
@@ -183,7 +193,7 @@ class MyDoctorVisitDetailView(APIView):
         return DoctorVisit.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
-        tags=["My Health Doctor Visits"],
+        tags=["Визиты врача"],
         summary="Получить посещение врача",
         description="Возвращает одно посещение врача (должно принадлежать текущему пользователю).",
         responses=DoctorVisitSerializer,
@@ -193,7 +203,7 @@ class MyDoctorVisitDetailView(APIView):
         return Response(DoctorVisitSerializer(obj, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Doctor Visits"],
+        tags=["Визиты врача"],
         summary="Обновить посещение врача",
         description="Обновляет посещение врача (должно принадлежать текущему пользователю).",
         request=DoctorVisitUpsertSerializer,
@@ -201,12 +211,14 @@ class MyDoctorVisitDetailView(APIView):
     )
     def patch(self, request, pk: int):
         obj = self._get_obj(request, pk)
-        s = DoctorVisitUpsertSerializer(instance=obj, data=request.data, partial=True)
+        s = DoctorVisitUpsertSerializer(
+            instance=obj, data=request.data, partial=True, context={"request": request}
+        )
         s.is_valid(raise_exception=True)
         obj = s.save()
         return Response(DoctorVisitSerializer(obj).data)
 
-    @extend_schema(tags=["My Health Doctor Visits"], summary="Удалить посещение врача", description="Удаляет посещение врача (должно принадлежать текущему пользователю).")
+    @extend_schema(tags=["Визиты врача"], summary="Удалить посещение врача", description="Удаляет посещение врача (должно принадлежать текущему пользователю).")
     def delete(self, request, pk: int):
         DoctorVisit.objects.filter(pk=pk, record__user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -219,7 +231,7 @@ class MyAnalysisListCreateView(APIView):
         return DiseaseRecord.objects.get(pk=record_id, user=request.user)
 
     @extend_schema(
-        tags=["My Health Analyses"],
+        tags=["Анализы"],
         summary="Список анализов",
         description="Возвращает анализы для одной записи болезни (принадлежит текущему пользователю).",
         responses=AnalysisSerializer(many=True),
@@ -230,7 +242,7 @@ class MyAnalysisListCreateView(APIView):
         return Response(AnalysisSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Analyses"],
+        tags=["Анализы"],
         summary="Добавить анализ",
         description="Создаёт новый анализ внутри указанной записи болезни (должна принадлежать текущему пользователю).",
         request=AnalysisUpsertSerializer,
@@ -238,7 +250,7 @@ class MyAnalysisListCreateView(APIView):
     )
     def post(self, request, record_id: int):
         record = self._get_record(request, record_id)
-        s = AnalysisUpsertSerializer(data=request.data)
+        s = AnalysisUpsertSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         obj = s.save(record=record)
         return Response(AnalysisSerializer(obj).data, status=status.HTTP_201_CREATED)
@@ -251,7 +263,7 @@ class MyAnalysisDetailView(APIView):
         return Analysis.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
-        tags=["My Health Analyses"],
+        tags=["Анализы"],
         summary="Получить анализ",
         description="Возвращает один анализ (должен принадлежать текущему пользователю).",
         responses=AnalysisSerializer,
@@ -261,7 +273,7 @@ class MyAnalysisDetailView(APIView):
         return Response(AnalysisSerializer(obj, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Analyses"],
+        tags=["Анализы"],
         summary="Обновить анализ",
         description="Обновляет анализ (должен принадлежать текущему пользователю). Для фото используйте multipart/form-data.",
         request=AnalysisUpsertSerializer,
@@ -269,15 +281,64 @@ class MyAnalysisDetailView(APIView):
     )
     def patch(self, request, pk: int):
         obj = self._get_obj(request, pk)
-        s = AnalysisUpsertSerializer(instance=obj, data=request.data, partial=True)
+        s = AnalysisUpsertSerializer(instance=obj, data=request.data, partial=True, context={"request": request})
         s.is_valid(raise_exception=True)
         obj = s.save()
         return Response(AnalysisSerializer(obj).data)
 
-    @extend_schema(tags=["My Health Analyses"], summary="Удалить анализ", description="Удаляет анализ (должен принадлежать текущему пользователю).")
+    @extend_schema(tags=["Анализы"], summary="Удалить анализ", description="Удаляет анализ (должен принадлежать текущему пользователю).")
     def delete(self, request, pk: int):
         Analysis.objects.filter(pk=pk, record__user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnalysisOcrView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Анализы"],
+        summary="Распознавание текста с фото анализа (OCR)",
+        description=(
+            "Требуется ранее загруженное фото анализа (поле photo). "
+            "Параметр запроса mode: append — дописать к result_text, replace — заменить целиком (по умолчанию append)."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="mode",
+                required=False,
+                type=str,
+                description="Режим записи результата: append (добавить) или replace (заменить)",
+            ),
+        ],
+        request=inline_serializer(
+            name="AnalysisOcrEmptyBody",
+            fields={},
+        ),
+        responses={200: AnalysisSerializer},
+    )
+    def post(self, request, pk: int):
+        analysis = Analysis.objects.select_related("record").get(pk=pk, record__user=request.user)
+        if not analysis.photo:
+            return Response({"detail": "Сначала загрузите фото анализа (PATCH с multipart)."}, status=status.HTTP_400_BAD_REQUEST)
+        with analysis.photo.open("rb") as f:
+            raw = f.read()
+        name = (analysis.photo.name or "").lower()
+        mime = "image/png" if name.endswith(".png") else "image/webp" if name.endswith(".webp") else "image/jpeg"
+        try:
+            text = transcribe_lab_image(raw, mime)
+        except GeminiConfigError:
+            return Response({"detail": "GEMINI_API_KEY не настроен."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as exc:  # pragma: no cover
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        mode = (request.query_params.get("mode") or "append").lower()
+        if mode == "replace":
+            analysis.result_text = text
+        else:
+            base = (analysis.result_text or "").strip()
+            sep = "\n\n--- OCR ---\n\n"
+            analysis.result_text = text if not base else f"{base}{sep}{text}"
+        analysis.save(update_fields=["result_text", "updated_at"])
+        return Response(AnalysisSerializer(analysis, context={"request": request}).data)
 
 
 class MyPrescriptionListCreateView(APIView):
@@ -287,7 +348,7 @@ class MyPrescriptionListCreateView(APIView):
         return DiseaseRecord.objects.get(pk=record_id, user=request.user)
 
     @extend_schema(
-        tags=["My Health Prescriptions"],
+        tags=["Рецепты"],
         summary="Список рецептов",
         description="Возвращает рецепты/фото для одной записи болезни (принадлежит текущему пользователю).",
         responses=PrescriptionSerializer(many=True),
@@ -298,7 +359,7 @@ class MyPrescriptionListCreateView(APIView):
         return Response(PrescriptionSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Prescriptions"],
+        tags=["Рецепты"],
         summary="Добавить рецепт/фото",
         description="Создаёт новый рецепт/фото внутри указанной записи болезни (должна принадлежать текущему пользователю).",
         request=PrescriptionUpsertSerializer,
@@ -306,7 +367,7 @@ class MyPrescriptionListCreateView(APIView):
     )
     def post(self, request, record_id: int):
         record = self._get_record(request, record_id)
-        s = PrescriptionUpsertSerializer(data=request.data)
+        s = PrescriptionUpsertSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         obj = s.save(record=record)
         return Response(PrescriptionSerializer(obj).data, status=status.HTTP_201_CREATED)
@@ -319,7 +380,7 @@ class MyPrescriptionDetailView(APIView):
         return Prescription.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
-        tags=["My Health Prescriptions"],
+        tags=["Рецепты"],
         summary="Получить рецепт/фото",
         description="Возвращает один рецепт/фото (должен принадлежать текущему пользователю).",
         responses=PrescriptionSerializer,
@@ -329,7 +390,7 @@ class MyPrescriptionDetailView(APIView):
         return Response(PrescriptionSerializer(obj, context={"request": request}).data)
 
     @extend_schema(
-        tags=["My Health Prescriptions"],
+        tags=["Рецепты"],
         summary="Обновить рецепт/фото",
         description="Обновляет рецепт/фото (должен принадлежать текущему пользователю). Для фото используйте multipart/form-data.",
         request=PrescriptionUpsertSerializer,
@@ -337,12 +398,14 @@ class MyPrescriptionDetailView(APIView):
     )
     def patch(self, request, pk: int):
         obj = self._get_obj(request, pk)
-        s = PrescriptionUpsertSerializer(instance=obj, data=request.data, partial=True)
+        s = PrescriptionUpsertSerializer(
+            instance=obj, data=request.data, partial=True, context={"request": request}
+        )
         s.is_valid(raise_exception=True)
         obj = s.save()
         return Response(PrescriptionSerializer(obj).data)
 
-    @extend_schema(tags=["My Health Prescriptions"], summary="Удалить рецепт/фото", description="Удаляет рецепт/фото (должен принадлежать текущему пользователю).")
+    @extend_schema(tags=["Рецепты"], summary="Удалить рецепт/фото", description="Удаляет рецепт/фото (должен принадлежать текущему пользователю).")
     def delete(self, request, pk: int):
         Prescription.objects.filter(pk=pk, record__user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

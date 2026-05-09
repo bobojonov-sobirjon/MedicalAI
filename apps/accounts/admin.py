@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import Group
 from django.contrib.sites.models import Site
 
-from .models import CustomUser, PasswordResetCode, SocialAccount
+from .models import CustomUser, FamilyLink, PasswordResetCode, SocialAccount
 
 
 # Hide built-in models we don't use in this project UI
@@ -44,6 +44,10 @@ class CustomUserAdmin(UserAdmin):
                     "date_of_birth",
                     "height_cm",
                     "weight_kg",
+                    "chronic_diseases",
+                    "had_covid",
+                    "useful_tips_subscribed",
+                    "pin_code_hash",
                 ),
             },
         ),
@@ -51,6 +55,12 @@ class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "phone_number", "nickname", "is_staff", "is_active", "date_joined")
     search_fields = ("username", "email", "phone_number")
     inlines = (SocialAccountInline, PasswordResetCodeInline)
+
+
+@admin.register(FamilyLink)
+class FamilyLinkAdmin(admin.ModelAdmin):
+    list_display = ("owner", "member", "label", "created_at")
+    raw_id_fields = ("owner", "member")
 
 
 # SocialAccount and PasswordResetCode are managed via CustomUser inline.

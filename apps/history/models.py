@@ -8,15 +8,24 @@ from apps.catalog.models import Disease, Drug
 
 class DiseaseRecord(models.Model):
     """
-    User private disease history entry.
-    Created/edited by the user; visible only to the owner (via API).
+    Личная запись истории болезней пользователя.
+    Создаётся/редактируется пользователем; доступна только владельцу (через API).
     """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        verbose_name="Пользователь",
+        verbose_name="Владелец записи (аккаунт)",
         on_delete=models.CASCADE,
         related_name="disease_records",
+    )
+    subject_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Для кого запись (член семьи)",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="disease_records_as_subject",
+        help_text="Если null — запись относится к владельцу (поле user).",
     )
 
     # Directory links (optional)
@@ -49,7 +58,7 @@ class DiseaseRecord(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         name = self.disease.name if self.disease else self.title
-        return f"{self.user_id}: {name or 'record'}"
+        return f"{self.user_id}: {name or 'запись'}"
 
 
 class DoctorVisit(models.Model):

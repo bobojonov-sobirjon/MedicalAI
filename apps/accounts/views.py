@@ -43,7 +43,7 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Регистрация пользователя",
         description=(
             "Создаёт новый аккаунт.\n\n"
@@ -87,7 +87,7 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Вход (username/email/phone + пароль)",
         description="Вход по `identifier` (username/email/phone_number) + `password`. Возвращает профиль + пару JWT токенов.",
         request=LoginSerializer,
@@ -116,7 +116,7 @@ class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Обновить access токен",
         description="Используйте `refresh` токен, чтобы получить новый `access` токен.",
         request=inline_serializer(
@@ -144,7 +144,7 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["User Details"],
+        tags=["Профиль"],
         summary="Получить профиль текущего пользователя",
         description="Возвращает профиль текущего пользователя (ник, пол, город, дата рождения, рост, вес и т.д.).",
         responses=UserMeSerializer,
@@ -153,7 +153,7 @@ class MeView(APIView):
         return Response(UserMeSerializer(request.user, context={"request": request}).data)
 
     @extend_schema(
-        tags=["User Details"],
+        tags=["Профиль"],
         summary="Обновить профиль",
         description="Обновляет поля профиля (ФИО, ник, пол, город, дата рождения, рост, вес). Для аватара используйте multipart/form-data. Смена пароля: POST /api/auth/password/change/ (см. ТЗ §7.7 / §7.5).",
         request=UserUpdateSerializer,
@@ -170,7 +170,7 @@ class SocialLoginView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Соц. вход (VK/Google/Apple)",
         description=(
             "Единый endpoint для входа через соцсети.\n\n"
@@ -267,7 +267,7 @@ class PasswordChangeView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Сменить пароль (пользователь авторизован)",
         description=(
             "ТЗ §7.7: смена пароля в профиле (старый + новый). "
@@ -290,7 +290,7 @@ class ForgotPasswordRequestView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Забыли пароль — отправить код на email (ТЗ §7.5)",
         description=(
             "Send only `email`. If an active account with this email exists, a 6-digit code is emailed. "
@@ -324,7 +324,7 @@ class ForgotPasswordVerifyView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Забыли пароль — проверить код из email",
         description=(
             "Check `email` and 6-digit `code` from the email. "
@@ -372,7 +372,7 @@ class ForgotPasswordResetView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Авторизация"],
         summary="Забыли пароль — установить новый пароль",
         description="После проверки кода отправьте `reset_token` и `new_password`. Возвращает пару JWT токенов.",
         request=ForgotPasswordResetSerializer,

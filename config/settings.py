@@ -33,9 +33,14 @@ LOCAL_APPS = [
     'apps.accounts',
     'apps.catalog',
     'apps.history',
+    'apps.cabinet',
+    'apps.assistant',
+    'apps.medic',
 ]
 
 INSTALLED_APPS = [
+    'daphne',
+    'channels',
     'jazzmin',
     'django.contrib.sites',
     'django.contrib.admin',
@@ -58,7 +63,14 @@ JAZZMIN_SETTINGS = {
     "site_brand": "MedicalAI",
     "welcome_sign": "Welcome to MedicalAI Admin",
     "copyright": "MedicalAI",
-    "search_model": ["accounts.CustomUser", "catalog.Disease", "catalog.Drug", "history.DiseaseRecord"],
+    "search_model": [
+        "accounts.CustomUser",
+        "catalog.Disease",
+        "catalog.Drug",
+        "catalog.DrugViewLog",
+        "history.DiseaseRecord",
+        "cabinet.CabinetItem",
+    ],
     "topmenu_links": [
         {"name": "API Docs", "url": "/docs/", "new_window": True},
     ],
@@ -66,7 +78,7 @@ JAZZMIN_SETTINGS = {
     "navigation_expanded": True,
     "hide_apps": [],
     "hide_models": [],
-    "order_with_respect_to": ["accounts", "catalog"],
+    "order_with_respect_to": ["accounts", "catalog", "history", "cabinet", "assistant", "medic"],
     "icons": {
         "accounts.customuser": "fas fa-user",
         "accounts.socialaccount": "fas fa-link",
@@ -74,6 +86,8 @@ JAZZMIN_SETTINGS = {
         "catalog.disease": "fas fa-virus",
         "catalog.drug": "fas fa-pills",
         "history.diseaserecord": "fas fa-notes-medical",
+        "catalog.drugviewlog": "fas fa-eye",
+        "cabinet.cabinetitem": "fas fa-briefcase-medical",
     },
     "default_icon_parents": "fas fa-chevron-circle-right",
     "default_icon_children": "fas fa-circle",
@@ -89,6 +103,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'config.middleware.apikey_middleware.BackendApiKeyMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -97,6 +112,15 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'config.urls'
+
+# WebSocket (Channels): уведомления в реальном времени — см. /ws/notifications/
+ASGI_APPLICATION = 'config.asgi.application'
+# Для нескольких воркеров укажите Redis и пакет channels-redis, затем задайте CHANNEL_LAYERS вручную.
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
+}
 
 TEMPLATES = [
     {
@@ -296,8 +320,11 @@ DEFAULT_FROM_EMAIL = (
 
 # DRF Spectacular Configuration
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'MedicalAI APIs',
-    'DESCRIPTION': 'MedicalAI backend APIs (JWT auth)',
+    'TITLE': 'MedicAI API',
+    'DESCRIPTION': (
+        'Бэкенд MedicAI: REST API с JWT, справочники, история болезней, помощник (ИИ), '
+        'уведомления, медучреждения, аптечка и др. по ТЗ.'
+    ),
     'VERSION': 'v1',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
@@ -313,28 +340,61 @@ SPECTACULAR_SETTINGS = {
         'hideHostname': True,
     },
     'TAGS': [
-        {'name': 'Auth', 'description': 'Login, register, refresh, social, password'},
-        {'name': 'User Details', 'description': 'Current user profile (read/update)'},
-        {'name': 'Diseases', 'description': 'Public diseases directory'},
-        {'name': 'Drugs', 'description': 'Public drugs directory'},
-        {'name': 'My Health', 'description': 'User private medical history'},
-        {'name': 'My Health Doctor Visits', 'description': 'Doctor visits inside user history'},
-        {'name': 'My Health Analyses', 'description': 'Analyses inside user history'},
-        {'name': 'My Health Prescriptions', 'description': 'Prescriptions inside user history'},
+        {'name': 'Авторизация', 'description': 'Регистрация, вход, обновление токена, соцсети, смена и восстановление пароля.'},
+        {'name': 'Профиль', 'description': 'Текущий пользователь: чтение и обновление профиля (ЛК).'},
+        {'name': 'Заболевания', 'description': 'Публичный справочник заболеваний, поиск, карточка с рекомендуемыми лекарствами.'},
+        {'name': 'Лекарства', 'description': 'Публичный справочник: список и карточка лекарства (без отзывов и соц. функций).'},
+        {'name': 'Отзывы на лекарства', 'description': 'Одобренные отзывы и отправка отзыва на модерацию по лекарству.'},
+        {'name': 'Обсуждения лекарств', 'description': 'Тред обсуждения лекарства: список сообщений и отправка сообщения.'},
+        {'name': 'Оценки лекарств', 'description': 'Оценка лекарства звёздами (не чаще одного изменения за 24 часа).'},
+        {'name': 'Аналоги лекарств', 'description': 'Список аналогов по лекарству (данные из БД; наполнение парсером/админкой).'},
+        {'name': 'Просмотры лекарств', 'description': 'Учёт открытия карточки лекарства для списка «ранее просмотренные».'},
+        {'name': 'История здоровья', 'description': 'Личные записи о болезнях пользователя (ТЗ §7.8).'},
+        {'name': 'Визиты врача', 'description': 'Посещения врача внутри записи истории болезни.'},
+        {'name': 'Анализы', 'description': 'Анализы внутри записи истории; загрузка фото, OCR (ТЗ).'},
+        {'name': 'Рецепты', 'description': 'Фото рецептов внутри записи истории болезни.'},
+        {'name': 'Помощник', 'description': 'Симптомы и ИИ-подбор (Gemini), справочник симптомов/частей тела, FAQ.'},
+        {'name': 'Аптечка', 'description': 'Моя аптечка: список, добавление, распознавание по фото.'},
+        {'name': 'Контент', 'description': 'Статические страницы (о компании, конфиденциальность), конфиг приложения, опросы.'},
+        {'name': 'Медучреждения', 'description': 'Города, аптеки и больницы, карточка учреждения (ТЗ §7.13).'},
+        {'name': 'Уведомления', 'description': 'События (REST), полезная лента, настройки; WebSocket ws/notifications/?token=JWT для push в реальном времени (ТЗ §7.12).'},
+        {'name': 'Поддержка', 'description': 'Обратная связь, вопрос психологу, чат со службой поддержки (ТЗ §7.17–7.18).'},
+        {'name': 'Релакс', 'description': 'Лента GIF и видео (ТЗ §7.21).'},
+        {'name': 'Голос', 'description': 'Распознавание речи для полей форм (заглушка / интеграция STT, ТЗ §8.2.2).'},
+        {'name': 'Администрирование', 'description': 'Метрики и сводки для персонала (ТЗ §5.1).'},
     ],
     'PREPROCESSING_HOOKS': [],
     'POSTPROCESSING_HOOKS': [],
     'GENERIC_ADDITIONAL_PROPERTIES': None,
     'CAMPAIGN': None,
     'CONTACT': {
-        'name': 'API Support',
-        'email': 'contact@snippets.local',
+        'name': 'Поддержка API MedicAI',
+        'email': 'support@medic-ai.ru',
     },
     'LICENSE': {
-        'name': 'BSD License',
+        'name': 'Проприетарная лицензия',
     },
 }
 
 # TZ §7.5 forgot password — email code TTL and signed reset_token TTL (step after verify)
 PASSWORD_RESET_CODE_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_CODE_TTL_MINUTES', '15'))
 PASSWORD_RESET_SESSION_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_SESSION_TTL_MINUTES', '15'))
+
+# Google Gemini (Stage 2: assistant + OCR)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash').strip()
+
+# RuTronix (единый API для ИИ-моделей; замена для Gemini в текстовых задачах)
+RUTRONIX_API_KEY = os.getenv('RUTRONIX_API_KEY', '').strip()
+RUTRONIX_MODEL = os.getenv('RUTRONIX_MODEL', 'one-perfect-answer').strip()
+RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').strip()
+
+PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
+FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))
+
+# In-process scheduler for reminder notifications (dev / single instance)
+ENABLE_REMINDER_SCHEDULER = os.getenv('ENABLE_REMINDER_SCHEDULER', 'true').strip()
+
+# TZ §3.3 optional global API key for mobile (header X-Backend-Key)
+BACKEND_API_KEY = os.getenv('BACKEND_API_KEY', '').strip()
+REQUIRE_BACKEND_API_KEY = os.getenv('REQUIRE_BACKEND_API_KEY', 'false').strip().lower() in ('1', 'true', 'yes')

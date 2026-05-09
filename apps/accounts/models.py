@@ -6,8 +6,8 @@ from django.db import models
 
 class CustomUser(AbstractUser):
     """
-    Minimal, extensible user model for mobile auth.
-    We keep username for compatibility, but treat email/phone as primary identifiers.
+    Минимальная и расширяемая модель пользователя для мобильной авторизации.
+    `username` сохранён для совместимости, но основными идентификаторами считаются email/телефон.
     """
 
     class Gender(models.TextChoices):
@@ -15,7 +15,7 @@ class CustomUser(AbstractUser):
         FEMALE = "female", "Женский"
         OTHER = "other", "Другое"
 
-    email = models.EmailField("Email", blank=True, null=True, unique=True)
+    email = models.EmailField("Эл. почта", blank=True, null=True, unique=True)
     phone_number = models.CharField("Телефон", max_length=32, blank=True, null=True, unique=True)
     avatar = models.ImageField("Аватар", upload_to="avatars/", blank=True, null=True)
 
@@ -26,6 +26,11 @@ class CustomUser(AbstractUser):
     height_cm = models.PositiveSmallIntegerField("Рост (см)", blank=True, null=True)
     weight_kg = models.DecimalField("Вес (кг)", max_digits=5, decimal_places=2, blank=True, null=True)
 
+    chronic_diseases = models.TextField("Хронические заболевания", blank=True, default="")
+    had_covid = models.BooleanField("Переболели Covid-19", null=True, blank=True)
+    pin_code_hash = models.CharField("Пин-код (хэш)", max_length=128, blank=True, default="")
+    useful_tips_subscribed = models.BooleanField("Подписка на полезные советы", default=False)
+
     class Meta:
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
@@ -35,7 +40,7 @@ class CustomUser(AbstractUser):
 
 
 class PasswordResetCode(models.Model):
-    """TZ §7.5: one-time email code for forgot-password flow."""
+    """ТЗ §7.5: одноразовый код из письма для сценария «забыли пароль»."""
 
     user = models.ForeignKey(CustomUser, verbose_name="Пользователь", on_delete=models.CASCADE, related_name="password_reset_codes")
     code_hash = models.CharField("Хэш кода", max_length=128)
@@ -76,4 +81,33 @@ class SocialAccount(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.provider}:{self.provider_user_id}"
+
+
+class FamilyLink(models.Model):
+    """TZ §7.7 / §8.2.3 — несколько учётных записей."""
+
+    owner = models.ForeignKey(
+        CustomUser,
+        verbose_name="Основной пользователь",
+        on_delete=models.CASCADE,
+        related_name="family_owned_links",
+    )
+    member = models.ForeignKey(
+        CustomUser,
+        verbose_name="Привязанный профиль",
+        on_delete=models.CASCADE,
+        related_name="family_member_of",
+    )
+    label = models.CharField("Подпись", max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Связь семейных аккаунтов"
+        verbose_name_plural = "Связи семейных аккаунтов"
+        constraints = [
+            models.UniqueConstraint(fields=("owner", "member"), name="uniq_family_owner_member"),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.owner_id}→{self.member_id}"
 

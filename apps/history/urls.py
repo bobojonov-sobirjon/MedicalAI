@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    AnalysisOcrView,
     MyDiseaseRecordListCreateView,
     MyDiseaseRecordDetailView,
     MyDoctorVisitListCreateView,
@@ -23,6 +24,7 @@ urlpatterns = [
     # analyses (many per record)
     path("me/disease-records/<int:record_id>/analyses/", MyAnalysisListCreateView.as_view(), name="my-analyses"),
     path("me/analyses/<int:pk>/", MyAnalysisDetailView.as_view(), name="my-analysis-detail"),
+    path("me/analyses/<int:pk>/ocr/", AnalysisOcrView.as_view(), name="my-analysis-ocr"),
 
     # prescriptions (many per record)
     path("me/disease-records/<int:record_id>/prescriptions/", MyPrescriptionListCreateView.as_view(), name="my-prescriptions"),

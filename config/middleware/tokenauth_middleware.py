@@ -1,21 +1,19 @@
-from channels.middleware import BaseMiddleware
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from channels.db import database_sync_to_async
-from django.contrib.auth.models import AnonymousUser
-import jwt
 from urllib.parse import parse_qs
+
+from channels.db import database_sync_to_async
+from channels.middleware import BaseMiddleware
+from django.contrib.auth.models import AnonymousUser
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import TokenError
 
 
 @database_sync_to_async
-def get_user_from_jwt(token_key):
+def get_user_from_jwt(token_key: str):
     try:
         jwt_auth = JWTAuthentication()
         validated_token = jwt_auth.get_validated_token(token_key)
-        user = jwt_auth.get_user(validated_token)
-        return user
-    except jwt.ExpiredSignatureError:
-        return AnonymousUser()
-    except jwt.InvalidTokenError:
+        return jwt_auth.get_user(validated_token)
+    except TokenError:
         return AnonymousUser()
 
 
