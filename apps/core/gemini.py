@@ -20,6 +20,107 @@ def _model_name() -> str:
     return (getattr(settings, "GEMINI_MODEL", None) or "gemini-2.0-flash").strip()
 
 
+def normalize_lab_ocr_plain_text(raw: str) -> str:
+    """
+    Post-process OCR: remove ``` / ```json fences; if fenced body is JSON, pretty-print as plain text
+    (field `result_text` stays a string, not a nested JSON object in the API).
+    """
+    t = (raw or "").strip()
+    if not t:
+        return t
+
+    def _try_json_pretty(inner: str) -> str | None:
+        inner = inner.strip()
+        if not inner:
+            return inner
+        try:
+            obj = json.loads(inner)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(obj, (dict, list)):
+            return json.dumps(obj, ensure_ascii=False, indent=2)
+        return str(obj)
+
+    m = re.match(r"^```(?:[a-zA-Z0-9_-]+)?\s*\r?\n([\s\S]*?)\r?\n```\s*$", t)
+    if m:
+        inner = m.group(1)
+        pretty = _try_json_pretty(inner)
+        return pretty if pretty is not None else inner.strip()
+
+    def repl(mm: re.Match) -> str:
+        inner = mm.group(1)
+        pretty = _try_json_pretty(inner)
+        return pretty if pretty is not None else inner.strip()
+
+    return re.sub(r"```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```", repl, t).strip()
+
+
+def is_lab_ocr_rejection_message(text: str) -> bool:
+    """Model says the image is not a lab document — replace entire result_text with this message."""
+    return "не видно бланка анализа" in (text or "").casefold()
+
+
+def sanitize_prior_analysis_result_text(s: str) -> str:
+    """Strip ```…``` blocks, drop junk segments, then rebuild with a single OCR separator style."""
+    t = s or ""
+    while True:
+        n = re.sub(r"```[a-zA-Z0-9_-]*\s*\r?\n[\s\S]*?\r?\n```", "", t)
+        if n == t:
+            break
+        t = n
+    t = re.sub(r"(?:\n\n--- OCR ---\n\n)+", "\n\n--- OCR ---\n\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+
+    def _probable_ui_json_blob(p: str) -> bool:
+        st = p.strip()
+        if not st.startswith("{"):
+            return False
+        try:
+            d = json.loads(st)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(d, dict):
+            return False
+        keys = set(d.keys())
+        if "navigation" in keys:
+            return True
+        if "header" in keys and "main_content" in keys:
+            return True
+        return False
+
+    parts = [p.strip() for p in t.split("\n\n--- OCR ---\n\n")]
+    kept: list[str] = []
+    for p in parts:
+        if not p:
+            continue
+        if p.casefold() == "string":
+            continue
+        if is_lab_ocr_rejection_message(p):
+            continue
+        if _probable_ui_json_blob(p):
+            continue
+        kept.append(p)
+    return "\n\n--- OCR ---\n\n".join(kept).strip()
+
+
+def merge_lab_ocr_result_text(*, old: str | None, new: str, mode: str) -> str:
+    """
+    Build final `result_text` after an OCR run.
+    - If the new run is the “not a lab document” message → whole field becomes only that (drops junk).
+    - replace → new only.
+    - append → old text cleaned (no fenced blocks) + separator + new.
+    """
+    new = (new or "").strip()
+    if is_lab_ocr_rejection_message(new):
+        return new
+    if (mode or "").lower() == "replace":
+        return new
+    base = sanitize_prior_analysis_result_text(old or "")
+    if not base:
+        return new
+    return f"{base}\n\n--- OCR ---\n\n{new}"
+
+
 def generate_json(system_instruction: str, user_text: str, *, temperature: float = 0.2) -> dict[str, Any]:
     """
     Text-only completion; response parsed as JSON object.
@@ -64,11 +165,16 @@ def generate_json(system_instruction: str, user_text: str, *, temperature: float
 def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> str:
     """OCR-style plain text for medical lab reports (Russian)."""
     system = (
-        "Ты помощник для извлечения текста с фото медицинского анализа. "
-        "Верни только структурированный текст результатов, без диагнозов и без советов врача. "
-        "Если текст нечитаем — верни краткое сообщение об этом."
+        "Ты извлекаешь текст только с бланков/результатов медицинских анализов (лаборатория, УЗИ-заключение, выписка с показателями). "
+        "Если на фото нет медицинского документа (скриншот приложения, меню кафе, реклама и т.п.) — ответь одной короткой строкой на русском: "
+        "«На изображении не видно бланка анализа. Загрузите фото бланка или результатов анализа.» "
+        "Не придумывай JSON, таблицы интерфейсов и навигацию сайтов. "
+        "Формат ответа: обычный текст, без Markdown, без блоков ``` и без обёртки JSON."
     )
-    prompt = "Извлеки весь читаемый текст с изображения (заголовки, показатели, единицы, референсы)."
+    prompt = (
+        "Извлеки читаемый текст с медицинского документа: названия показателей, значения, единицы, референсы, даты. "
+        "Если это не медицинский документ — одна короткая фраза из системной инструкции."
+    )
     if not gemini_configured():
         raise GeminiConfigError("GEMINI_API_KEY is not set")
 
@@ -80,7 +186,7 @@ def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> 
     if pil.mode not in ("RGB", "RGBA"):
         pil = pil.convert("RGB")
     resp = model.generate_content([prompt, pil], generation_config=genai.GenerationConfig(temperature=0.1))
-    return (resp.text or "").strip()
+    return normalize_lab_ocr_plain_text((resp.text or "").strip())
 
 
 def recognize_drug_name_from_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> str:

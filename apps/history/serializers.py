@@ -78,6 +78,95 @@ class PrescriptionUpsertSerializer(serializers.ModelSerializer):
         }
 
 
+class AnalysisCreateMultipartSerializer(serializers.Serializer):
+    """POST multipart: barcha maydonlar form-data (Swagger hammasini ko‘rsatadi)."""
+
+    record_id = serializers.IntegerField(help_text="Disease record id")
+    taken_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="YYYY-MM-DD",
+    )
+    name = serializers.CharField(required=False, allow_blank=True, default="", help_text="Analysis name")
+    result_text = serializers.CharField(required=False, allow_blank=True, default="", help_text="Result text")
+    photo = serializers.ImageField(required=False, allow_null=True)
+
+    def validate_record_id(self, value: int) -> int:
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Нет контекста пользователя.")
+        if not DiseaseRecord.objects.filter(pk=value, user=request.user).exists():
+            raise serializers.ValidationError("Неверный record_id.")
+        return value
+
+    def create(self, validated_data: dict) -> Analysis:
+        rid = validated_data.pop("record_id")
+        record = DiseaseRecord.objects.get(pk=rid, user=self.context["request"].user)
+        return Analysis.objects.create(record=record, **validated_data)
+
+    def update(self, instance, validated_data):  # pragma: no cover
+        raise NotImplementedError
+
+
+class PrescriptionCreateMultipartSerializer(serializers.ModelSerializer):
+    record_id = serializers.IntegerField(write_only=True)
+
+    class Meta:
+        model = Prescription
+        fields = ("record_id", "photo", "note")
+
+    def validate_record_id(self, value: int) -> int:
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Нет контекста пользователя.")
+        if not DiseaseRecord.objects.filter(pk=value, user=request.user).exists():
+            raise serializers.ValidationError("Неверный record_id.")
+        return value
+
+    def create(self, validated_data: dict) -> Prescription:
+        rid = validated_data.pop("record_id")
+        record = DiseaseRecord.objects.get(pk=rid, user=self.context["request"].user)
+        return Prescription.objects.create(record=record, **validated_data)
+
+
+class DoctorVisitCreateMultipartSerializer(serializers.ModelSerializer):
+    record_id = serializers.IntegerField(write_only=True)
+
+    class Meta:
+        model = DoctorVisit
+        fields = (
+            "record_id",
+            "visit_date",
+            "specialty",
+            "doctor_full_name",
+            "diagnosis",
+            "medicines_text",
+            "procedures_text",
+        )
+
+    def validate_record_id(self, value: int) -> int:
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Нет контекста пользователя.")
+        if not DiseaseRecord.objects.filter(pk=value, user=request.user).exists():
+            raise serializers.ValidationError("Неверный record_id.")
+        return value
+
+    def create(self, validated_data: dict) -> DoctorVisit:
+        rid = validated_data.pop("record_id")
+        record = DiseaseRecord.objects.get(pk=rid, user=self.context["request"].user)
+        return DoctorVisit.objects.create(record=record, **validated_data)
+
+
+class AnalysisOcrFormSerializer(serializers.Serializer):
+    """multipart/form-data: все поля в теле (как PATCH /api/auth/me/)."""
+
+    record_id = serializers.IntegerField(help_text="ID записи болезни.")
+    analysis_id = serializers.IntegerField(help_text="ID анализа.")
+    photo = serializers.ImageField(required=False, allow_null=True)
+    mode = serializers.ChoiceField(choices=("append", "replace"), required=False, default="append")
+
+
 class PrescriptionUpsertInRecordSerializer(serializers.ModelSerializer):
     """
     Nested serializer for DiseaseRecord create/patch.
@@ -169,21 +258,6 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
     drug_ids = serializers.PrimaryKeyRelatedField(
         source="drugs", queryset=Drug.objects.all(), many=True, required=False
     )
-    doctor_visits = DoctorVisitUpsertSerializer(
-        many=True,
-        required=False,
-        help_text="Список посещений врача (если передан — заменяет текущий список).",
-    )
-    analyses = AnalysisUpsertInRecordSerializer(
-        many=True,
-        required=False,
-        help_text="Список анализов (если передан — заменяет текущий список).",
-    )
-    prescriptions = PrescriptionUpsertInRecordSerializer(
-        many=True,
-        required=False,
-        help_text="Список рецептов/фото (если передан — заменяет текущий список).",
-    )
 
     class Meta:
         model = DiseaseRecord
@@ -194,9 +268,6 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
             "subject_user_id",
             "symptoms",
             "drug_ids",
-            "doctor_visits",
-            "analyses",
-            "prescriptions",
         )
         extra_kwargs = {
             "date_of_illness": {"help_text": "Disease start date (YYYY-MM-DD)."},
@@ -246,6 +317,8 @@ class DoctorVisitSerializer(serializers.ModelSerializer):
 
 
 class AnalysisSerializer(serializers.ModelSerializer):
+    photo = serializers.SerializerMethodField()
+
     class Meta:
         model = Analysis
         fields = (
@@ -258,36 +331,39 @@ class AnalysisSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def get_photo(self, obj):
+        f = getattr(obj, "photo", None)
+        if not f:
+            return None
+        try:
+            url = f.url
+        except Exception:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
 
 class PrescriptionSerializer(serializers.ModelSerializer):
+    photo = serializers.SerializerMethodField()
+
     class Meta:
         model = Prescription
         fields = ("id", "photo", "note", "created_at")
 
-
-def upsert_doctor_visits(record: DiseaseRecord, items: list[dict]) -> None:
-    # No manual id input in nested payloads: treat as replace-with-create.
-    DoctorVisit.objects.filter(record=record).delete()
-    for raw in items:
-        s = DoctorVisitUpsertSerializer(data=raw)
-        s.is_valid(raise_exception=True)
-        DoctorVisit.objects.create(record=record, **s.validated_data)
-
-
-def upsert_analyses(record: DiseaseRecord, items: list[dict]) -> None:
-    # No manual id input in nested payloads: treat as replace-with-create.
-    Analysis.objects.filter(record=record).delete()
-    for raw in items:
-        s = AnalysisUpsertInRecordSerializer(data=raw)
-        s.is_valid(raise_exception=True)
-        Analysis.objects.create(record=record, **s.validated_data)
+    def get_photo(self, obj):
+        f = getattr(obj, "photo", None)
+        if not f:
+            return None
+        try:
+            url = f.url
+        except Exception:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
 
 
-def upsert_prescriptions(record: DiseaseRecord, items: list[dict]) -> None:
-    # No manual id input in nested payloads: treat as replace-with-create.
-    Prescription.objects.filter(record=record).delete()
-    for raw in items:
-        s = PrescriptionUpsertInRecordSerializer(data=raw)
-        s.is_valid(raise_exception=True)
-        Prescription.objects.create(record=record, **s.validated_data)
-
+"""
+NOTE:
+Previously we supported nested upserts for doctor_visits/analyses/prescriptions inside DiseaseRecord create/patch.
+That behavior was removed in favor of dedicated endpoints (including bulk endpoints).
+"""

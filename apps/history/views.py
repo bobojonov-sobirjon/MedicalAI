@@ -1,29 +1,31 @@
 from __future__ import annotations
 
 from django.db.models import Q
-from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from django.db import transaction
-from rest_framework import serializers, status
+from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.gemini import GeminiConfigError, transcribe_lab_image
+from apps.core.gemini import GeminiConfigError, merge_lab_ocr_result_text, transcribe_lab_image
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
 from .serializers import (
-    DiseaseRecordListSerializer,
-    DiseaseRecordDetailSerializer,
-    DiseaseRecordUpsertSerializer,
-    DoctorVisitSerializer,
-    DoctorVisitUpsertSerializer,
+    AnalysisCreateMultipartSerializer,
+    AnalysisOcrFormSerializer,
     AnalysisSerializer,
     AnalysisUpsertSerializer,
+    DiseaseRecordDetailSerializer,
+    DiseaseRecordListSerializer,
+    DiseaseRecordUpsertSerializer,
+    DoctorVisitCreateMultipartSerializer,
+    DoctorVisitSerializer,
+    DoctorVisitUpsertSerializer,
+    PrescriptionCreateMultipartSerializer,
     PrescriptionSerializer,
     PrescriptionUpsertSerializer,
-    upsert_doctor_visits,
-    upsert_analyses,
-    upsert_prescriptions,
 )
 
 
@@ -31,8 +33,12 @@ def _q(request) -> str:
     return (request.query_params.get("q") or "").strip()
 
 
+_MULTIPART_PARSERS = (MultiPartParser, FormParser, JSONParser)
+
+
 class MyDiseaseRecordListCreateView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     @extend_schema(
         tags=["История здоровья"],
@@ -50,40 +56,35 @@ class MyDiseaseRecordListCreateView(APIView):
     )
     def get(self, request):
         q = _q(request)
-        qs = DiseaseRecord.objects.filter(user=request.user).select_related("disease").order_by("-date_of_illness", "-created_at")
+        qs = (
+            DiseaseRecord.objects.filter(user=request.user)
+            .select_related("disease")
+            .prefetch_related("drugs", "doctor_visits", "analyses", "prescriptions")
+            .order_by("-date_of_illness", "-created_at")
+        )
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(symptoms__icontains=q) | Q(disease__name__icontains=q))
-        return Response(DiseaseRecordListSerializer(qs, many=True, context={"request": request}).data)
+        # Return full cards in list view (same structure as detail).
+        return Response(DiseaseRecordDetailSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
         tags=["История здоровья"],
         summary="Создать запись о болезни",
         description=(
             "Создаёт запись о болезни для текущего пользователя.\n\n"
-            "ВАЖНО: `doctor_visits`, `analyses`, `prescriptions` можно передать вложенными списками.\n"
-            "Если передадите эти списки — они будут сохранены внутри записи."
+            "Request body: `multipart/form-data` (как PATCH /api/auth/me/): все поля в форме.\n"
+            "Связанные сущности (визиты/анализы/рецепты) добавляйте через отдельные endpoints."
         ),
-        request=DiseaseRecordUpsertSerializer,
+        request={"multipart/form-data": DiseaseRecordUpsertSerializer},
         responses={201: DiseaseRecordDetailSerializer},
     )
     def post(self, request):
         s = DiseaseRecordUpsertSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         with transaction.atomic():
-            nested_visits = s.validated_data.pop("doctor_visits", None)
-            nested_analyses = s.validated_data.pop("analyses", None)
-            nested_prescriptions = s.validated_data.pop("prescriptions", None)
-
             record = s.save(user=request.user)
             if "drugs" in s.validated_data:
                 record.drugs.set(s.validated_data["drugs"])
-
-            if nested_visits is not None:
-                upsert_doctor_visits(record, nested_visits)
-            if nested_analyses is not None:
-                upsert_analyses(record, nested_analyses)
-            if nested_prescriptions is not None:
-                upsert_prescriptions(record, nested_prescriptions)
         return Response(
             DiseaseRecordDetailSerializer(record, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -92,6 +93,7 @@ class MyDiseaseRecordListCreateView(APIView):
 
 class MyDiseaseRecordDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     def _get_obj(self, request, pk: int) -> DiseaseRecord:
         return (
@@ -115,11 +117,9 @@ class MyDiseaseRecordDetailView(APIView):
         summary="Обновить мою запись о болезни",
         description=(
             "Частичное обновление записи текущего пользователя.\n\n"
-            "Правила вложенного обновления (когда переданы списки):\n"
-            "- вложенные списки (`doctor_visits`, `analyses`, `prescriptions`) заменяют текущие данные целиком\n"
-            "- ручное поле `id` в nested payload не используется (обновляйте элементы через отдельные PATCH endpoints)\n"
+            "Request body: `multipart/form-data` (все поля в форме)."
         ),
-        request=DiseaseRecordUpsertSerializer,
+        request={"multipart/form-data": DiseaseRecordUpsertSerializer},
         responses=DiseaseRecordDetailSerializer,
     )
     def patch(self, request, pk: int):
@@ -132,20 +132,9 @@ class MyDiseaseRecordDetailView(APIView):
         )
         s.is_valid(raise_exception=True)
         with transaction.atomic():
-            nested_visits = s.validated_data.pop("doctor_visits", None)
-            nested_analyses = s.validated_data.pop("analyses", None)
-            nested_prescriptions = s.validated_data.pop("prescriptions", None)
-
             record = s.save()
             if "drugs" in s.validated_data:
                 record.drugs.set(s.validated_data["drugs"])
-
-            if nested_visits is not None:
-                upsert_doctor_visits(record, nested_visits)
-            if nested_analyses is not None:
-                upsert_analyses(record, nested_analyses)
-            if nested_prescriptions is not None:
-                upsert_prescriptions(record, nested_prescriptions)
         return Response(DiseaseRecordDetailSerializer(record, context={"request": request}).data)
 
     @extend_schema(tags=["История здоровья"], summary="Удалить мою запись о болезни", description="Удаляет запись текущего пользователя.")
@@ -156,79 +145,37 @@ class MyDiseaseRecordDetailView(APIView):
 
 class MyDoctorVisitListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Визиты врача"],
-        summary="Список посещений врача",
-        description="Возвращает посещения врача для одной записи болезни (принадлежит текущему пользователю).",
-        responses=DoctorVisitSerializer(many=True),
-    )
-    def get(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        qs = DoctorVisit.objects.filter(record=record).order_by("-visit_date", "-created_at")
-        return Response(DoctorVisitSerializer(qs, many=True, context={"request": request}).data)
+    parser_classes = _MULTIPART_PARSERS
 
     @extend_schema(
         tags=["Визиты врача"],
         summary="Добавить посещение врача",
-        description="Создаёт новое посещение врача внутри указанной записи болезни (должна принадлежать текущему пользователю).",
-        request=DoctorVisitUpsertSerializer,
+        description=(
+            "Создаёт новое посещение врача.\n\n"
+            "Request body: `multipart/form-data`: поле `record_id` + поля визита (как PATCH /api/auth/me/)."
+        ),
+        request={"multipart/form-data": DoctorVisitCreateMultipartSerializer},
         responses={201: DoctorVisitSerializer},
     )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = DoctorVisitUpsertSerializer(data=request.data, context={"request": request})
+    def post(self, request):
+        s = DoctorVisitCreateMultipartSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
-        obj = s.save(record=record)
+        obj = s.save()
         return Response(DoctorVisitSerializer(obj).data, status=status.HTTP_201_CREATED)
-
-
-class MyDoctorVisitBulkCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Визиты врача"],
-        summary="Добавить несколько посещений врача (bulk)",
-        description="Создаёт несколько посещений врача внутри указанной записи болезни.",
-        request=DoctorVisitUpsertSerializer(many=True),
-        responses={201: DoctorVisitSerializer(many=True)},
-    )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = DoctorVisitUpsertSerializer(data=request.data, many=True, context={"request": request})
-        s.is_valid(raise_exception=True)
-        with transaction.atomic():
-            objs = [DoctorVisit.objects.create(record=record, **item) for item in s.validated_data]
-        return Response(DoctorVisitSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class MyDoctorVisitDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     def _get_obj(self, request, pk: int) -> DoctorVisit:
         return DoctorVisit.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
         tags=["Визиты врача"],
-        summary="Получить посещение врача",
-        description="Возвращает одно посещение врача (должно принадлежать текущему пользователю).",
-        responses=DoctorVisitSerializer,
-    )
-    def get(self, request, pk: int):
-        obj = self._get_obj(request, pk)
-        return Response(DoctorVisitSerializer(obj, context={"request": request}).data)
-
-    @extend_schema(
-        tags=["Визиты врача"],
         summary="Обновить посещение врача",
         description="Обновляет посещение врача (должно принадлежать текущему пользователю).",
-        request=DoctorVisitUpsertSerializer,
+        request={"multipart/form-data": DoctorVisitUpsertSerializer},
         responses=DoctorVisitSerializer,
     )
     def patch(self, request, pk: int):
@@ -248,79 +195,37 @@ class MyDoctorVisitDetailView(APIView):
 
 class MyAnalysisListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Анализы"],
-        summary="Список анализов",
-        description="Возвращает анализы для одной записи болезни (принадлежит текущему пользователю).",
-        responses=AnalysisSerializer(many=True),
-    )
-    def get(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        qs = Analysis.objects.filter(record=record).order_by("-taken_date", "-created_at")
-        return Response(AnalysisSerializer(qs, many=True, context={"request": request}).data)
+    parser_classes = _MULTIPART_PARSERS
 
     @extend_schema(
         tags=["Анализы"],
         summary="Добавить анализ",
-        description="Создаёт новый анализ внутри указанной записи болезни (должна принадлежать текущему пользователю).",
-        request=AnalysisUpsertSerializer,
+        description=(
+            "Создаёт новый анализ.\n\n"
+            "Request body: `multipart/form-data`: `record_id` + поля анализа и опционально `photo`."
+        ),
+        request={"multipart/form-data": AnalysisCreateMultipartSerializer},
         responses={201: AnalysisSerializer},
     )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = AnalysisUpsertSerializer(data=request.data, context={"request": request})
+    def post(self, request):
+        s = AnalysisCreateMultipartSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
-        obj = s.save(record=record)
-        return Response(AnalysisSerializer(obj).data, status=status.HTTP_201_CREATED)
-
-
-class MyAnalysisBulkCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Анализы"],
-        summary="Добавить несколько анализов (bulk)",
-        description="Создаёт несколько анализов внутри указанной записи болезни. Фото загружайте отдельно (PATCH /api/me/analyses/<id>/ multipart).",
-        request=AnalysisUpsertSerializer(many=True),
-        responses={201: AnalysisSerializer(many=True)},
-    )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = AnalysisUpsertSerializer(data=request.data, many=True, context={"request": request})
-        s.is_valid(raise_exception=True)
-        with transaction.atomic():
-            objs = [Analysis.objects.create(record=record, **item) for item in s.validated_data]
-        return Response(AnalysisSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
+        obj = s.save()
+        return Response(AnalysisSerializer(obj, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class MyAnalysisDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     def _get_obj(self, request, pk: int) -> Analysis:
         return Analysis.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
         tags=["Анализы"],
-        summary="Получить анализ",
-        description="Возвращает один анализ (должен принадлежать текущему пользователю).",
-        responses=AnalysisSerializer,
-    )
-    def get(self, request, pk: int):
-        obj = self._get_obj(request, pk)
-        return Response(AnalysisSerializer(obj, context={"request": request}).data)
-
-    @extend_schema(
-        tags=["Анализы"],
         summary="Обновить анализ",
         description="Обновляет анализ (должен принадлежать текущему пользователю). Для фото используйте multipart/form-data.",
-        request=AnalysisUpsertSerializer,
+        request={"multipart/form-data": AnalysisUpsertSerializer},
         responses=AnalysisSerializer,
     )
     def patch(self, request, pk: int):
@@ -336,34 +241,48 @@ class MyAnalysisDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class AnalysisOcrView(APIView):
+class AnalysisOcrFormView(APIView):
+    """
+    OCR: все поля в теле запроса как multipart/form-data (аналог PATCH /api/auth/me/).
+    """
+
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     @extend_schema(
         tags=["Анализы"],
-        summary="Распознавание текста с фото анализа (OCR)",
+        summary="OCR анализа (multipart: record_id, analysis_id, photo, mode)",
         description=(
-            "Требуется ранее загруженное фото анализа (поле photo). "
-            "Параметр запроса mode: append — дописать к result_text, replace — заменить целиком (по умолчанию append)."
+            "Все поля в Request body как `multipart/form-data`.\n"
+            "Если `photo` передан — сохраняется в анализ и сразу выполняется OCR.\n"
+            "Если нет — используется уже загруженное фото анализа."
         ),
-        parameters=[
-            OpenApiParameter(
-                name="mode",
-                required=False,
-                type=str,
-                description="Режим записи результата: append (добавить) или replace (заменить)",
-            ),
-        ],
-        request=inline_serializer(
-            name="AnalysisOcrEmptyBody",
-            fields={},
-        ),
+        request={"multipart/form-data": AnalysisOcrFormSerializer},
         responses={200: AnalysisSerializer},
     )
-    def post(self, request, pk: int):
-        analysis = Analysis.objects.select_related("record").get(pk=pk, record__user=request.user)
+    def post(self, request):
+        s = AnalysisOcrFormSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        record_id = int(s.validated_data["record_id"])
+        analysis_id = int(s.validated_data["analysis_id"])
+        mode_raw = s.validated_data.get("mode") or "append"
+        mode = mode_raw.lower() if isinstance(mode_raw, str) else "append"
+
+        analysis = Analysis.objects.select_related("record").get(
+            pk=analysis_id, record__id=record_id, record__user=request.user
+        )
+
+        uploaded = s.validated_data.get("photo")
+        if uploaded is not None:
+            analysis.photo = uploaded
+            analysis.save(update_fields=["photo", "updated_at"])
+
         if not analysis.photo:
-            return Response({"detail": "Сначала загрузите фото анализа (PATCH с multipart)."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Сначала загрузите фото анализа (PATCH multipart) или передайте `photo` в этом запросе."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with analysis.photo.open("rb") as f:
             raw = f.read()
         name = (analysis.photo.name or "").lower()
@@ -374,92 +293,45 @@ class AnalysisOcrView(APIView):
             return Response({"detail": "GEMINI_API_KEY не настроен."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as exc:  # pragma: no cover
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-        mode = (request.query_params.get("mode") or "append").lower()
-        if mode == "replace":
-            analysis.result_text = text
-        else:
-            base = (analysis.result_text or "").strip()
-            sep = "\n\n--- OCR ---\n\n"
-            analysis.result_text = text if not base else f"{base}{sep}{text}"
+
+        analysis.result_text = merge_lab_ocr_result_text(old=analysis.result_text, new=text, mode=mode)
         analysis.save(update_fields=["result_text", "updated_at"])
         return Response(AnalysisSerializer(analysis, context={"request": request}).data)
 
 
 class MyPrescriptionListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Рецепты"],
-        summary="Список рецептов",
-        description="Возвращает рецепты/фото для одной записи болезни (принадлежит текущему пользователю).",
-        responses=PrescriptionSerializer(many=True),
-    )
-    def get(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        qs = Prescription.objects.filter(record=record).order_by("-created_at")
-        return Response(PrescriptionSerializer(qs, many=True, context={"request": request}).data)
+    parser_classes = _MULTIPART_PARSERS
 
     @extend_schema(
         tags=["Рецепты"],
         summary="Добавить рецепт/фото",
-        description="Создаёт новый рецепт/фото внутри указанной записи болезни (должна принадлежать текущему пользователю).",
-        request=PrescriptionUpsertSerializer,
+        description=(
+            "Создаёт новый рецепт/фото.\n\n"
+            "Request body: `multipart/form-data`: `record_id` + `photo` / `note`."
+        ),
+        request={"multipart/form-data": PrescriptionCreateMultipartSerializer},
         responses={201: PrescriptionSerializer},
     )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = PrescriptionUpsertSerializer(data=request.data, context={"request": request})
+    def post(self, request):
+        s = PrescriptionCreateMultipartSerializer(data=request.data, files=request.FILES, context={"request": request})
         s.is_valid(raise_exception=True)
-        obj = s.save(record=record)
-        return Response(PrescriptionSerializer(obj).data, status=status.HTTP_201_CREATED)
-
-
-class MyPrescriptionBulkCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def _get_record(self, request, record_id: int) -> DiseaseRecord:
-        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
-
-    @extend_schema(
-        tags=["Рецепты"],
-        summary="Добавить несколько рецептов/фото (bulk)",
-        description="Создаёт несколько рецептов внутри указанной записи болезни. Для загрузки фото используйте PATCH /api/me/prescriptions/<id>/ multipart.",
-        request=PrescriptionUpsertSerializer(many=True),
-        responses={201: PrescriptionSerializer(many=True)},
-    )
-    def post(self, request, record_id: int):
-        record = self._get_record(request, record_id)
-        s = PrescriptionUpsertSerializer(data=request.data, many=True, context={"request": request})
-        s.is_valid(raise_exception=True)
-        with transaction.atomic():
-            objs = [Prescription.objects.create(record=record, **item) for item in s.validated_data]
-        return Response(PrescriptionSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
+        obj = s.save()
+        return Response(PrescriptionSerializer(obj, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class MyPrescriptionDetailView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = _MULTIPART_PARSERS
 
     def _get_obj(self, request, pk: int) -> Prescription:
         return Prescription.objects.select_related("record").get(pk=pk, record__user=request.user)
 
     @extend_schema(
         tags=["Рецепты"],
-        summary="Получить рецепт/фото",
-        description="Возвращает один рецепт/фото (должен принадлежать текущему пользователю).",
-        responses=PrescriptionSerializer,
-    )
-    def get(self, request, pk: int):
-        obj = self._get_obj(request, pk)
-        return Response(PrescriptionSerializer(obj, context={"request": request}).data)
-
-    @extend_schema(
-        tags=["Рецепты"],
         summary="Обновить рецепт/фото",
         description="Обновляет рецепт/фото (должен принадлежать текущему пользователю). Для фото используйте multipart/form-data.",
-        request=PrescriptionUpsertSerializer,
+        request={"multipart/form-data": PrescriptionUpsertSerializer},
         responses=PrescriptionSerializer,
     )
     def patch(self, request, pk: int):

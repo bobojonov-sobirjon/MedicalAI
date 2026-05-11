@@ -48,6 +48,7 @@ def _request(
     expected: set[int] | None = None,
     params: dict[str, Any] | None = None,
     json_body: Any | None = None,
+    data: dict[str, Any] | None = None,
     files: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     timeout_s: int = 25,
@@ -64,16 +65,25 @@ def _request(
         h.setdefault("X-Backend-Key", api_key)
 
     t0 = time.time()
-    resp = session.request(
-        method=method.upper(),
-        url=url,
-        params=params,
-        json=json_body if files is None else None,
-        data=None if json_body is None or files is None else None,
-        files=files,
-        headers=h,
-        timeout=timeout_s,
-    )
+    if json_body is not None:
+        resp = session.request(
+            method=method.upper(),
+            url=url,
+            params=params,
+            json=json_body,
+            headers=h,
+            timeout=timeout_s,
+        )
+    else:
+        resp = session.request(
+            method=method.upper(),
+            url=url,
+            params=params,
+            data=data,
+            files=files,
+            headers=h,
+            timeout=timeout_s,
+        )
     elapsed_ms = int((time.time() - t0) * 1000)
     body_json = _safe_json(resp)
     ok = resp.ok if expected is None else resp.status_code in expected
@@ -123,6 +133,7 @@ def run_smoke(*, base_url: str, token: str) -> int:
         expected: set[int] | None = None,
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
+        data: dict[str, Any] | None = None,
         files: dict[str, Any] | None = None,
         auth: bool = True,
     ) -> StepResult:
@@ -136,6 +147,7 @@ def run_smoke(*, base_url: str, token: str) -> int:
             expected=expected,
             params=params,
             json_body=json_body,
+            data=data,
             files=files,
         )
         results.append(r)
@@ -301,8 +313,16 @@ def run_smoke(*, base_url: str, token: str) -> int:
         v = do(
             "Doctor visit create",
             "POST",
-            f"/api/me/disease-records/{record_id}/doctor-visits/",
-            json_body={"visit_date": "2026-01-02", "specialty": "Терапевт", "doctor_full_name": "smoke", "diagnosis": "", "medicines_text": "", "procedures_text": ""},
+            "/api/me/disease-records/doctor-visits/",
+            data={
+                "record_id": str(record_id),
+                "visit_date": "2026-01-02",
+                "specialty": "Терапевт",
+                "doctor_full_name": "smoke",
+                "diagnosis": "",
+                "medicines_text": "",
+                "procedures_text": "",
+            },
             expected={201, 400},
         )
         visit_id = v.response_json.get("id") if isinstance(v.response_json, dict) else None
@@ -313,21 +333,36 @@ def run_smoke(*, base_url: str, token: str) -> int:
         a = do(
             "Analysis create",
             "POST",
-            f"/api/me/disease-records/{record_id}/analyses/",
-            json_body={"taken_date": "2026-01-03", "name": "smoke", "result_text": "ok", "photo": None},
+            "/api/me/disease-records/analyses/",
+            data={
+                "record_id": str(record_id),
+                "taken_date": "2026-01-03",
+                "name": "smoke",
+                "result_text": "ok",
+            },
             expected={201, 400},
         )
         analysis_id = a.response_json.get("id") if isinstance(a.response_json, dict) else None
         if isinstance(analysis_id, int):
             # OCR should 400 because no photo (this is still a useful smoke check)
-            do("Analysis OCR (expected fail if no photo)", "POST", f"/api/me/analyses/{analysis_id}/ocr/?mode=append", json_body={}, expected={200, 400, 503, 502})
+            do(
+                "Analysis OCR (expected fail if no photo)",
+                "POST",
+                "/api/me/disease-records/analyses/ocr/",
+                data={
+                    "record_id": str(record_id),
+                    "analysis_id": str(analysis_id),
+                    "mode": "append",
+                },
+                expected={400, 503, 502},
+            )
             do("Analysis delete", "DELETE", f"/api/me/analyses/{analysis_id}/", expected={204})
         # prescription create
         p = do(
             "Prescription create",
             "POST",
-            f"/api/me/disease-records/{record_id}/prescriptions/",
-            json_body={"note": "smoke", "photo": None},
+            "/api/me/disease-records/prescriptions/",
+            data={"record_id": str(record_id), "note": "smoke"},
             expected={201, 400},
         )
         pres_id = p.response_json.get("id") if isinstance(p.response_json, dict) else None

@@ -326,9 +326,7 @@
 - `disease_id`: integer|null (optional) — связь со справочником болезней
 - `subject_user_id`: integer|null (optional) — “для кого” (я или член семьи)
 - `drug_ids`: integer[] (optional) — лекарства из справочника
-- `doctor_visits`: object[] (optional) — если передан, **заменяет** текущий список
-- `analyses`: object[] (optional) — если передан, **заменяет** текущий список
-- `prescriptions`: object[] (optional) — если передан, **заменяет** текущий список
+> Визиты/анализы/рецепты добавляйте через отдельные endpoints (в т.ч. bulk).
 
 **Пример POST:**
 
@@ -339,23 +337,7 @@
   "symptoms": "кашель, температура",
   "disease_id": 53,
   "subject_user_id": null,
-  "drug_ids": [18],
-  "doctor_visits": [
-    {
-      "visit_date": "2026-01-02",
-      "specialty": "Терапевт",
-      "doctor_full_name": "Иванова А.А.",
-      "diagnosis": "…",
-      "medicines_text": "…",
-      "procedures_text": "…"
-    }
-  ],
-  "analyses": [
-    { "taken_date": "2026-01-03", "name": "ОАК", "result_text": "…", "photo": null }
-  ],
-  "prescriptions": [
-    { "photo": null, "note": "…" }
-  ]
+  "drug_ids": [18]
 }
 ```
 
