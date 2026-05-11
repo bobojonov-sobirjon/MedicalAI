@@ -186,6 +186,28 @@ class MyDoctorVisitListCreateView(APIView):
         return Response(DoctorVisitSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
+class MyDoctorVisitBulkCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_record(self, request, record_id: int) -> DiseaseRecord:
+        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
+
+    @extend_schema(
+        tags=["Визиты врача"],
+        summary="Добавить несколько посещений врача (bulk)",
+        description="Создаёт несколько посещений врача внутри указанной записи болезни.",
+        request=DoctorVisitUpsertSerializer(many=True),
+        responses={201: DoctorVisitSerializer(many=True)},
+    )
+    def post(self, request, record_id: int):
+        record = self._get_record(request, record_id)
+        s = DoctorVisitUpsertSerializer(data=request.data, many=True, context={"request": request})
+        s.is_valid(raise_exception=True)
+        with transaction.atomic():
+            objs = [DoctorVisit.objects.create(record=record, **item) for item in s.validated_data]
+        return Response(DoctorVisitSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
+
+
 class MyDoctorVisitDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -254,6 +276,28 @@ class MyAnalysisListCreateView(APIView):
         s.is_valid(raise_exception=True)
         obj = s.save(record=record)
         return Response(AnalysisSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+
+class MyAnalysisBulkCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_record(self, request, record_id: int) -> DiseaseRecord:
+        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
+
+    @extend_schema(
+        tags=["Анализы"],
+        summary="Добавить несколько анализов (bulk)",
+        description="Создаёт несколько анализов внутри указанной записи болезни. Фото загружайте отдельно (PATCH /api/me/analyses/<id>/ multipart).",
+        request=AnalysisUpsertSerializer(many=True),
+        responses={201: AnalysisSerializer(many=True)},
+    )
+    def post(self, request, record_id: int):
+        record = self._get_record(request, record_id)
+        s = AnalysisUpsertSerializer(data=request.data, many=True, context={"request": request})
+        s.is_valid(raise_exception=True)
+        with transaction.atomic():
+            objs = [Analysis.objects.create(record=record, **item) for item in s.validated_data]
+        return Response(AnalysisSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class MyAnalysisDetailView(APIView):
@@ -371,6 +415,28 @@ class MyPrescriptionListCreateView(APIView):
         s.is_valid(raise_exception=True)
         obj = s.save(record=record)
         return Response(PrescriptionSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+
+class MyPrescriptionBulkCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_record(self, request, record_id: int) -> DiseaseRecord:
+        return DiseaseRecord.objects.get(pk=record_id, user=request.user)
+
+    @extend_schema(
+        tags=["Рецепты"],
+        summary="Добавить несколько рецептов/фото (bulk)",
+        description="Создаёт несколько рецептов внутри указанной записи болезни. Для загрузки фото используйте PATCH /api/me/prescriptions/<id>/ multipart.",
+        request=PrescriptionUpsertSerializer(many=True),
+        responses={201: PrescriptionSerializer(many=True)},
+    )
+    def post(self, request, record_id: int):
+        record = self._get_record(request, record_id)
+        s = PrescriptionUpsertSerializer(data=request.data, many=True, context={"request": request})
+        s.is_valid(raise_exception=True)
+        with transaction.atomic():
+            objs = [Prescription.objects.create(record=record, **item) for item in s.validated_data]
+        return Response(PrescriptionSerializer(objs, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class MyPrescriptionDetailView(APIView):

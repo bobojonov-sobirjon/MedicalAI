@@ -49,6 +49,23 @@ class AnalysisUpsertSerializer(serializers.ModelSerializer):
         }
 
 
+class AnalysisUpsertInRecordSerializer(serializers.ModelSerializer):
+    """
+    Nested serializer for DiseaseRecord create/patch.
+    Excludes `photo` so OpenAPI for DiseaseRecordUpsertSerializer stays JSON-only.
+    Upload a photo via PATCH /api/me/analyses/{id}/ as multipart.
+    """
+
+    class Meta:
+        model = Analysis
+        fields = ("taken_date", "name", "result_text")
+        extra_kwargs = {
+            "taken_date": {"help_text": "Analysis date (YYYY-MM-DD)."},
+            "name": {"help_text": "Analysis name (e.g. CBC)."},
+            "result_text": {"help_text": "Analysis result (free text)."},
+        }
+
+
 class PrescriptionUpsertSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prescription
@@ -59,6 +76,19 @@ class PrescriptionUpsertSerializer(serializers.ModelSerializer):
             },
             "note": {"help_text": "Optional note about prescription."},
         }
+
+
+class PrescriptionUpsertInRecordSerializer(serializers.ModelSerializer):
+    """
+    Nested serializer for DiseaseRecord create/patch.
+    Excludes `photo` so OpenAPI for DiseaseRecordUpsertSerializer stays JSON-only.
+    Upload a photo via PATCH /api/me/prescriptions/{id}/ as multipart.
+    """
+
+    class Meta:
+        model = Prescription
+        fields = ("note",)
+        extra_kwargs = {"note": {"help_text": "Optional note about prescription."}}
 
 
 class DiseaseMiniSerializer(serializers.ModelSerializer):
@@ -144,12 +174,12 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
         required=False,
         help_text="Список посещений врача (если передан — заменяет текущий список).",
     )
-    analyses = AnalysisUpsertSerializer(
+    analyses = AnalysisUpsertInRecordSerializer(
         many=True,
         required=False,
         help_text="Список анализов (если передан — заменяет текущий список).",
     )
-    prescriptions = PrescriptionUpsertSerializer(
+    prescriptions = PrescriptionUpsertInRecordSerializer(
         many=True,
         required=False,
         help_text="Список рецептов/фото (если передан — заменяет текущий список).",
@@ -248,7 +278,7 @@ def upsert_analyses(record: DiseaseRecord, items: list[dict]) -> None:
     # No manual id input in nested payloads: treat as replace-with-create.
     Analysis.objects.filter(record=record).delete()
     for raw in items:
-        s = AnalysisUpsertSerializer(data=raw)
+        s = AnalysisUpsertInRecordSerializer(data=raw)
         s.is_valid(raise_exception=True)
         Analysis.objects.create(record=record, **s.validated_data)
 
@@ -257,7 +287,7 @@ def upsert_prescriptions(record: DiseaseRecord, items: list[dict]) -> None:
     # No manual id input in nested payloads: treat as replace-with-create.
     Prescription.objects.filter(record=record).delete()
     for raw in items:
-        s = PrescriptionUpsertSerializer(data=raw)
+        s = PrescriptionUpsertInRecordSerializer(data=raw)
         s.is_valid(raise_exception=True)
         Prescription.objects.create(record=record, **s.validated_data)
 
