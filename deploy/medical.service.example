@@ -1,0 +1,17 @@
+# Copy to /etc/systemd/system/medical.service (adjust paths/user).
+# Critical: Gunicorn default --timeout 30 kills OCR workers; gunicorn.conf.py defaults to 180s.
+[Unit]
+Description=gunicorn MedicalAI
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/MedicalAI
+Environment=PATH=/var/www/MedicalAI/env/bin
+EnvironmentFile=-/var/www/MedicalAI/.env
+ExecStart=/var/www/MedicalAI/env/bin/gunicorn -c /var/www/MedicalAI/gunicorn.conf.py config.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -194,7 +194,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = "/media/"
 # Production uchun /var/www/media, development uchun local media folder
 MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/var/www/media')
-# OCR (RuTronix + большое фото) может занять >30 с: в unit Gunicorn задайте --timeout 120 (или больше), иначе WORKER TIMEOUT.
+# OCR (RuTronix) часто >30 с: без gunicorn.conf.py Gunicorn убивает воркер (WORKER TIMEOUT). См. gunicorn.conf.py и deploy/medical.service.example.
 
 
 LOCALE_PATHS = [

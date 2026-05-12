@@ -1,8 +1,7 @@
-# Example Gunicorn config for MedicalAI (copy path into systemd or use -c).
-# Default Gunicorn timeout=30 kills workers during RuTronix OCR; use >= 120 for vision routes.
+# Deprecated: use repo root gunicorn.conf.py (env GUNICORN_TIMEOUT, WEB_CONCURRENCY).
 bind = "unix:/run/medical.sock"
 workers = 3
 worker_class = "sync"
-timeout = 120
-graceful_timeout = 60
+timeout = 180
+graceful_timeout = 120
 keepalive = 5
