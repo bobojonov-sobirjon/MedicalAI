@@ -31,6 +31,14 @@ def _model_name() -> str:
     return (getattr(settings, "RUTRONIX_MODEL", None) or "one-perfect-answer").strip()
 
 
+def _http_timeout_chat_s() -> float:
+    return float(getattr(settings, "RUTRONIX_CHAT_TIMEOUT_S", 45.0))
+
+
+def _http_timeout_vision_s() -> float:
+    return float(getattr(settings, "RUTRONIX_VISION_TIMEOUT_S", 25.0))
+
+
 def _assistant_text_from_message(msg: dict[str, Any] | None) -> str:
     """Normalize OpenAI-style assistant message `content` (str or list of parts) to plain text."""
     if not isinstance(msg, dict):
@@ -61,7 +69,7 @@ def chat_completions(
     model: str | None = None,
     temperature: float = 0.2,
     max_completion_tokens: int = 2048,
-    timeout_s: float = 45.0,
+    timeout_s: float | None = None,
 ) -> dict[str, Any]:
     """
     RuTronix OpenAI-compatible chat completions.
@@ -70,6 +78,9 @@ def chat_completions(
     """
     if not rutronix_configured():
         raise RuTronixConfigError("RUTRONIX_API_KEY is not set")
+
+    if timeout_s is None:
+        timeout_s = _http_timeout_chat_s()
 
     url = f"{_base_url()}/functions/v1/chat-completions"
     headers = {
@@ -148,7 +159,7 @@ def complete_with_image_plain(
     mime_type: str = "image/jpeg",
     temperature: float = 0.1,
     max_completion_tokens: int = 4096,
-    timeout_s: float = 120.0,
+    timeout_s: float | None = None,
 ) -> str:
     """
     OpenAI-style chat completion with one image (data URL) + text; returns assistant plain text.
@@ -174,11 +185,12 @@ def complete_with_image_plain(
         },
     ]
 
+    vision_timeout = timeout_s if timeout_s is not None else _http_timeout_vision_s()
     resp = chat_completions(
         messages=messages,
         temperature=temperature,
         max_completion_tokens=max_completion_tokens,
-        timeout_s=timeout_s,
+        timeout_s=vision_timeout,
     )
     return _assistant_text_from_message((resp.get("choices") or [{}])[0].get("message") or {})
 

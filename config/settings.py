@@ -389,6 +389,9 @@ GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash').strip()
 RUTRONIX_API_KEY = os.getenv('RUTRONIX_API_KEY', '').strip()
 RUTRONIX_MODEL = os.getenv('RUTRONIX_MODEL', 'one-perfect-answer').strip()
 RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').strip()
+# httpx (s). Vision/OCR: Gunicorn default --timeout 30 kills workers; keep RUTRONIX_VISION_TIMEOUT_S < 30 unless you raise Gunicorn (e.g. --timeout 180) and then set RUTRONIX_VISION_TIMEOUT_S=120.
+RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '45'))
+RUTRONIX_VISION_TIMEOUT_S = float(os.getenv('RUTRONIX_VISION_TIMEOUT_S', '25'))
 
 PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
 FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))

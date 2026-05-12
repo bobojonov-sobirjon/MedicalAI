@@ -337,9 +337,7 @@ class MyPrescriptionListCreateView(APIView):
     )
     def post(self, request):
         try:
-            s = PrescriptionCreateMultipartSerializer(
-                data=request.data, files=request.FILES, context={"request": request}
-            )
+            s = PrescriptionCreateMultipartSerializer(data=request.data, context={"request": request})
             s.is_valid(raise_exception=True)
             obj = s.save()
             return Response(
