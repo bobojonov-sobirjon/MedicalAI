@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any
@@ -112,4 +113,52 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
     if not m:
         raise json.JSONDecodeError("No JSON object", raw, 0)
     return json.loads(m.group(0))
+
+
+def complete_with_image_plain(
+    *,
+    system_instruction: str,
+    user_text: str,
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    temperature: float = 0.1,
+    max_completion_tokens: int = 4096,
+    timeout_s: float = 120.0,
+) -> str:
+    """
+    OpenAI-style chat completion with one image (data URL) + text; returns assistant plain text.
+    Used for lab OCR and drug photo recognition when RuTronix is configured.
+    """
+    if not rutronix_configured():
+        raise RuTronixConfigError("RUTRONIX_API_KEY is not set")
+
+    mt = (mime_type or "image/jpeg").strip()
+    if "/" not in mt:
+        mt = "image/jpeg"
+    b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+    data_url = f"data:{mt};base64,{b64}"
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": (system_instruction or "").strip()},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": (user_text or "").strip()},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ],
+        },
+    ]
+
+    resp = chat_completions(
+        messages=messages,
+        temperature=temperature,
+        max_completion_tokens=max_completion_tokens,
+        timeout_s=timeout_s,
+    )
+    raw = (
+        (resp.get("choices") or [{}])[0]
+        .get("message", {})
+        .get("content", "")
+    )
+    return (raw or "").strip()
 

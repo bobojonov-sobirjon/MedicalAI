@@ -4,6 +4,7 @@ from django.core.files.uploadedfile import UploadedFile
 
 from apps.catalog.models import Drug
 from apps.core.gemini import GeminiConfigError, recognize_drug_name_from_image
+from apps.core.rutronix import RuTronixConfigError
 
 
 def match_drug_by_name(name: str) -> tuple[Drug | None, int | None]:
@@ -28,7 +29,7 @@ def recognize_cabinet_upload(
     """TZ §7.14 — при отсутствии в БД создаётся новая карточка лекарства."""
     try:
         recognized = recognize_drug_name_from_image(image_bytes, mime_type)
-    except GeminiConfigError:
+    except (GeminiConfigError, RuTronixConfigError):
         recognized = ""
     drug, pk = match_drug_by_name(recognized)
     if drug is None and recognized and len(recognized.strip()) > 2:

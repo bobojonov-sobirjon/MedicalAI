@@ -175,8 +175,24 @@ def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> 
         "Извлеки читаемый текст с медицинского документа: названия показателей, значения, единицы, референсы, даты. "
         "Если это не медицинский документ — одна короткая фраза из системной инструкции."
     )
+    try:
+        from .rutronix import complete_with_image_plain, rutronix_configured
+    except Exception:  # pragma: no cover
+        complete_with_image_plain = None
+        rutronix_configured = lambda: False  # type: ignore
+
+    if complete_with_image_plain and rutronix_configured():
+        text = complete_with_image_plain(
+            system_instruction=system,
+            user_text=prompt,
+            image_bytes=image_bytes,
+            mime_type=_mime_type,
+            temperature=0.1,
+        )
+        return normalize_lab_ocr_plain_text(text)
+
     if not gemini_configured():
-        raise GeminiConfigError("GEMINI_API_KEY is not set")
+        raise GeminiConfigError("Настройте RUTRONIX_API_KEY (OCR) или GEMINI_API_KEY.")
 
     import google.generativeai as genai
 
@@ -196,8 +212,26 @@ def recognize_drug_name_from_image(image_bytes: bytes, _mime_type: str = "image/
         "Ответь одной строкой: только название препарата как на упаковке, без пояснений. "
         "Если не уверен — кратко: Не удалось распознать."
     )
+    user_q = "Какое название лекарства на фото? Одна строка."
+
+    try:
+        from .rutronix import complete_with_image_plain, rutronix_configured
+    except Exception:  # pragma: no cover
+        complete_with_image_plain = None
+        rutronix_configured = lambda: False  # type: ignore
+
+    if complete_with_image_plain and rutronix_configured():
+        text = complete_with_image_plain(
+            system_instruction=system,
+            user_text=user_q,
+            image_bytes=image_bytes,
+            mime_type=_mime_type,
+            temperature=0.1,
+        )
+        return (text or "").strip().split("\n")[0].strip()[:255]
+
     if not gemini_configured():
-        raise GeminiConfigError("GEMINI_API_KEY is not set")
+        raise GeminiConfigError("Настройте RUTRONIX_API_KEY (распознавание) или GEMINI_API_KEY.")
 
     import google.generativeai as genai
 
@@ -207,7 +241,7 @@ def recognize_drug_name_from_image(image_bytes: bytes, _mime_type: str = "image/
     if pil.mode not in ("RGB", "RGBA"):
         pil = pil.convert("RGB")
     resp = model.generate_content(
-        ["Какое название лекарства на фото? Одна строка.", pil],
+        [user_q, pil],
         generation_config=genai.GenerationConfig(temperature=0.1),
     )
     return (resp.text or "").strip().split("\n")[0].strip()[:255]

@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.gemini import GeminiConfigError, merge_lab_ocr_result_text, transcribe_lab_image
+from apps.core.rutronix import RuTronixConfigError
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
 from .serializers import (
@@ -289,8 +290,13 @@ class AnalysisOcrFormView(APIView):
         mime = "image/png" if name.endswith(".png") else "image/webp" if name.endswith(".webp") else "image/jpeg"
         try:
             text = transcribe_lab_image(raw, mime)
-        except GeminiConfigError:
-            return Response({"detail": "GEMINI_API_KEY не настроен."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except (GeminiConfigError, RuTronixConfigError):
+            return Response(
+                {
+                    "detail": "Не настроен ключ ИИ для OCR: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         except Exception as exc:  # pragma: no cover
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
