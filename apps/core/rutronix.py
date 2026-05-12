@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+from io import BytesIO
 from typing import Any
 
 import httpx
@@ -36,11 +37,49 @@ def _http_timeout_chat_s() -> float:
 
 
 def _vision_httpx_timeout() -> httpx.Timeout:
-    """Separate read/write so large JSON upload can be slow but RuTronix *response* read is capped (Gunicorn)."""
+    """Vision: keep each phase bounded; Gunicorn default --timeout 30 counts whole request wall time."""
     read_s = float(getattr(settings, "RUTRONIX_VISION_READ_S", 20.0))
     write_s = float(getattr(settings, "RUTRONIX_VISION_WRITE_S", 120.0))
     connect_s = float(getattr(settings, "RUTRONIX_VISION_CONNECT_S", 12.0))
-    return httpx.Timeout(connect=connect_s, read=read_s, write=write_s, pool=10.0)
+    # pool: acquiring connection from pool (rare stall)
+    return httpx.Timeout(connect=connect_s, read=read_s, write=write_s, pool=5.0)
+
+
+def _downsample_image_for_vision_api(image_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
+    """
+    Shrink + JPEG-recompress lab/drug photos so RuTronix JSON body uploads fast (avoids Gunicorn worker kill).
+    """
+    from PIL import Image
+
+    max_side = int(getattr(settings, "RUTRONIX_VISION_MAX_IMAGE_SIDE", 1280))
+    quality = int(getattr(settings, "RUTRONIX_VISION_JPEG_QUALITY", 82))
+    quality = max(40, min(quality, 95))
+
+    try:
+        im = Image.open(BytesIO(image_bytes))
+    except Exception:
+        return image_bytes, mime_type
+
+    if im.mode in ("RGBA", "P"):
+        if im.mode == "RGBA":
+            bg = Image.new("RGB", im.size, (255, 255, 255))
+            bg.paste(im, mask=im.split()[3])
+            im = bg
+        else:
+            im = im.convert("RGB")
+    elif im.mode != "RGB":
+        im = im.convert("RGB")
+
+    w, h = im.size
+    if w < 1 or h < 1:
+        return image_bytes, mime_type
+    if max(w, h) > max_side:
+        ratio = max_side / float(max(w, h))
+        im = im.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.Resampling.LANCZOS)
+
+    out = BytesIO()
+    im.save(out, format="JPEG", quality=quality, optimize=True)
+    return out.getvalue(), "image/jpeg"
 
 
 def _assistant_text_from_message(msg: dict[str, Any] | None) -> str:
@@ -177,6 +216,7 @@ def complete_with_image_plain(
     mt = (mime_type or "image/jpeg").strip()
     if "/" not in mt:
         mt = "image/jpeg"
+    image_bytes, mt = _downsample_image_for_vision_api(image_bytes, mt)
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
     data_url = f"data:{mt};base64,{b64}"
 

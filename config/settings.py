@@ -401,6 +401,9 @@ if 'RUTRONIX_VISION_READ_S' in os.environ:
 else:
     # Legacy: only RUTRONIX_VISION_TIMEOUT_S — keep read under typical Gunicorn --timeout 30.
     RUTRONIX_VISION_READ_S = min(RUTRONIX_VISION_TIMEOUT_S, 22.0)
+# Before RuTronix vision: resize + JPEG (see apps/core/rutronix.py). OCR still needs Gunicorn --timeout >= 60–120 on slow providers.
+RUTRONIX_VISION_MAX_IMAGE_SIDE = int(os.getenv('RUTRONIX_VISION_MAX_IMAGE_SIDE', '1280'))
+RUTRONIX_VISION_JPEG_QUALITY = int(os.getenv('RUTRONIX_VISION_JPEG_QUALITY', '82'))
 
 PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
 FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))
