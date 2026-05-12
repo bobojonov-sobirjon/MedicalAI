@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import CustomUser, FamilyLink
 from apps.catalog.models import Disease, Drug
+from apps.core.gemini import format_lab_ocr_for_client
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
 
@@ -318,6 +319,7 @@ class DoctorVisitSerializer(serializers.ModelSerializer):
 
 class AnalysisSerializer(serializers.ModelSerializer):
     photo = serializers.SerializerMethodField()
+    result_text = serializers.SerializerMethodField()
 
     class Meta:
         model = Analysis
@@ -330,6 +332,9 @@ class AnalysisSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def get_result_text(self, obj):
+        return format_lab_ocr_for_client(getattr(obj, "result_text", None) or "")
 
     def get_photo(self, obj):
         f = getattr(obj, "photo", None)

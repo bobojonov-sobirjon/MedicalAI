@@ -55,8 +55,24 @@ def normalize_lab_ocr_plain_text(raw: str) -> str:
     return re.sub(r"```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```", repl, t).strip()
 
 
+def _strip_all_md_emphasis(s: str) -> str:
+    """Remove Markdown **bold** and *italic* (common OCR noise for mobile)."""
+    t = s or ""
+    for _ in range(12):
+        n = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+        if n == t:
+            break
+        t = n
+    for _ in range(8):
+        n = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", t)
+        if n == t:
+            break
+        t = n
+    return t
+
+
 def _strip_md_bold(s: str) -> str:
-    return re.sub(r"\*\*([^*]+)\*\*", r"\1", s or "")
+    return _strip_all_md_emphasis(s or "")
 
 
 def _pipe_row_cells(line: str) -> list[str]:
@@ -126,7 +142,7 @@ def format_lab_ocr_for_client(text: str) -> str:
 
     merged = "\n".join(out).strip()
     merged = re.sub(r"\n{3,}", "\n\n", merged)
-    return merged.strip()
+    return _strip_all_md_emphasis(merged).strip()
 
 
 def is_lab_ocr_rejection_message(text: str) -> bool:
