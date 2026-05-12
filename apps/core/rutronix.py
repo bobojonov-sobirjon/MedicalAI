@@ -31,6 +31,30 @@ def _model_name() -> str:
     return (getattr(settings, "RUTRONIX_MODEL", None) or "one-perfect-answer").strip()
 
 
+def _assistant_text_from_message(msg: dict[str, Any] | None) -> str:
+    """Normalize OpenAI-style assistant message `content` (str or list of parts) to plain text."""
+    if not isinstance(msg, dict):
+        return ""
+    content: Any = msg.get("content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                ptype = part.get("type")
+                if ptype == "text":
+                    parts.append(str(part.get("text") or ""))
+                elif ptype == "refusal":
+                    parts.append(str(part.get("refusal") or ""))
+        return "".join(parts).strip()
+    if content is None:
+        return ""
+    return str(content).strip()
+
+
 def chat_completions(
     *,
     messages: list[dict[str, Any]],
@@ -66,7 +90,13 @@ def chat_completions(
         if r.status_code == 402:
             raise RuTronixPaymentRequired("RuTronix balance is insufficient (402)")
         r.raise_for_status()
-        return r.json()
+        try:
+            data = r.json()
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"RuTronix response is not JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise RuntimeError(f"RuTronix returned unexpected JSON root type: {type(data).__name__}")
+        return data
 
 
 def generate_json(system_instruction: str, user_text: str, *, temperature: float = 0.2) -> dict[str, Any]:
@@ -89,12 +119,7 @@ def generate_json(system_instruction: str, user_text: str, *, temperature: float
         max_completion_tokens=2500,
     )
 
-    raw = (
-        (resp.get("choices") or [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
-    raw = (raw or "").strip()
+    raw = _assistant_text_from_message((resp.get("choices") or [{}])[0].get("message") or {})
     if not raw:
         raise RuntimeError("Empty RuTronix response")
 
@@ -155,10 +180,5 @@ def complete_with_image_plain(
         max_completion_tokens=max_completion_tokens,
         timeout_s=timeout_s,
     )
-    raw = (
-        (resp.get("choices") or [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
-    return (raw or "").strip()
+    return _assistant_text_from_message((resp.get("choices") or [{}])[0].get("message") or {})
 

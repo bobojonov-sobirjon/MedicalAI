@@ -34,6 +34,18 @@ def _q(request) -> str:
     return (request.query_params.get("q") or "").strip()
 
 
+_PRESCRIPTION_MEDIA_ERR = (
+    "Не удалось сохранить файл на диск. Проверьте MEDIA_ROOT в окружении и права на запись "
+    "для пользователя Gunicorn (например: mkdir -p …/media/prescriptions && chown нужному пользователю)."
+)
+
+
+def _prescription_save_error_response(exc: BaseException) -> Response:
+    if isinstance(exc, (OSError, PermissionError)):
+        return Response({"detail": f"{_PRESCRIPTION_MEDIA_ERR} ({exc!s})"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 _MULTIPART_PARSERS = (MultiPartParser, FormParser, JSONParser)
 
 
@@ -284,25 +296,28 @@ class AnalysisOcrFormView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with analysis.photo.open("rb") as f:
-            raw = f.read()
-        name = (analysis.photo.name or "").lower()
-        mime = "image/png" if name.endswith(".png") else "image/webp" if name.endswith(".webp") else "image/jpeg"
         try:
-            text = transcribe_lab_image(raw, mime)
-        except (GeminiConfigError, RuTronixConfigError):
-            return Response(
-                {
-                    "detail": "Не настроен ключ ИИ для OCR: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        except Exception as exc:  # pragma: no cover
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            with analysis.photo.open("rb") as f:
+                image_raw = f.read()
+            name = (analysis.photo.name or "").lower()
+            mime = "image/png" if name.endswith(".png") else "image/webp" if name.endswith(".webp") else "image/jpeg"
+            try:
+                text = transcribe_lab_image(image_raw, mime)
+            except (GeminiConfigError, RuTronixConfigError):
+                return Response(
+                    {
+                        "detail": "Не настроен ключ ИИ для OCR: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            except Exception as exc:  # pragma: no cover
+                return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        analysis.result_text = merge_lab_ocr_result_text(old=analysis.result_text, new=text, mode=mode)
-        analysis.save(update_fields=["result_text", "updated_at"])
-        return Response(AnalysisSerializer(analysis, context={"request": request}).data)
+            analysis.result_text = merge_lab_ocr_result_text(old=analysis.result_text, new=text, mode=mode)
+            analysis.save(update_fields=["result_text", "updated_at"])
+            return Response(AnalysisSerializer(analysis, context={"request": request}).data)
+        except Exception as exc:  # pragma: no cover
+            return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class MyPrescriptionListCreateView(APIView):
@@ -322,8 +337,11 @@ class MyPrescriptionListCreateView(APIView):
     def post(self, request):
         s = PrescriptionCreateMultipartSerializer(data=request.data, files=request.FILES, context={"request": request})
         s.is_valid(raise_exception=True)
-        obj = s.save()
-        return Response(PrescriptionSerializer(obj, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        try:
+            obj = s.save()
+            return Response(PrescriptionSerializer(obj, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        except Exception as exc:  # pragma: no cover
+            return _prescription_save_error_response(exc)
 
 
 class MyPrescriptionDetailView(APIView):
@@ -346,8 +364,11 @@ class MyPrescriptionDetailView(APIView):
             instance=obj, data=request.data, partial=True, context={"request": request}
         )
         s.is_valid(raise_exception=True)
-        obj = s.save()
-        return Response(PrescriptionSerializer(obj).data)
+        try:
+            obj = s.save()
+            return Response(PrescriptionSerializer(obj, context={"request": request}).data)
+        except Exception as exc:  # pragma: no cover
+            return _prescription_save_error_response(exc)
 
     @extend_schema(tags=["Рецепты"], summary="Удалить рецепт/фото", description="Удаляет рецепт/фото (должен принадлежать текущему пользователю).")
     def delete(self, request, pk: int):
