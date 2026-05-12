@@ -10,7 +10,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.gemini import GeminiConfigError, merge_lab_ocr_result_text, transcribe_lab_image
+from apps.core.gemini import (
+    GeminiConfigError,
+    format_lab_ocr_for_client,
+    merge_lab_ocr_result_text,
+    transcribe_lab_image,
+)
 from apps.core.rutronix import RuTronixConfigError
 
 from .models import DiseaseRecord, DoctorVisit, Analysis, Prescription
@@ -303,7 +308,7 @@ class AnalysisOcrFormView(APIView):
             name = (analysis.photo.name or "").lower()
             mime = "image/png" if name.endswith(".png") else "image/webp" if name.endswith(".webp") else "image/jpeg"
             try:
-                text = transcribe_lab_image(image_raw, mime)
+                text = format_lab_ocr_for_client(transcribe_lab_image(image_raw, mime))
             except (GeminiConfigError, RuTronixConfigError):
                 return Response(
                     {

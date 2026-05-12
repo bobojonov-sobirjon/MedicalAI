@@ -55,6 +55,80 @@ def normalize_lab_ocr_plain_text(raw: str) -> str:
     return re.sub(r"```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```", repl, t).strip()
 
 
+def _strip_md_bold(s: str) -> str:
+    return re.sub(r"\*\*([^*]+)\*\*", r"\1", s or "")
+
+
+def _pipe_row_cells(line: str) -> list[str]:
+    return [_strip_md_bold(c).strip() for c in line.strip().strip("|").split("|")]
+
+
+def _is_md_separator_row(cells: list[str]) -> bool:
+    if not cells:
+        return False
+    return all(re.match(r"^[\s\-:|\u2013]+$", c) for c in cells)
+
+
+def _pipe_table_to_plain(tbl_lines: list[str]) -> str:
+    """GitHub-style | table | -> bullet blocks for mobile clients (no Markdown)."""
+    rows: list[list[str]] = []
+    for ln in tbl_lines:
+        if "|" not in ln:
+            continue
+        cells = _pipe_row_cells(ln)
+        if not cells:
+            continue
+        if _is_md_separator_row(cells):
+            continue
+        rows.append(cells)
+    if len(rows) < 2:
+        return "\n".join(_strip_md_bold(x) for x in tbl_lines).strip()
+
+    header = rows[0]
+    blocks: list[str] = []
+    for cells in rows[1:]:
+        if len(cells) != len(header):
+            blocks.append(" — ".join(cells))
+            continue
+        title = cells[0] or "—"
+        pairs = [f"{header[j]}: {cells[j]}" for j in range(1, len(header)) if cells[j]]
+        if pairs:
+            blocks.append(f"• {title}\n  " + "\n  ".join(pairs))
+        else:
+            blocks.append(f"• {title}")
+    return "\n\n".join(blocks).strip()
+
+
+def format_lab_ocr_for_client(text: str) -> str:
+    """
+    Normalize OCR output for API/mobile: Markdown pipe tables -> structured plain text,
+    strip **bold** markers, collapse excessive blank lines.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return raw
+
+    lines = raw.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if "|" in ln and ln.count("|") >= 2:
+            start = i
+            while i < len(lines) and lines[i].strip() and "|" in lines[i]:
+                i += 1
+            out.append(_pipe_table_to_plain(lines[start:i]))
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            continue
+        out.append(_strip_md_bold(ln).rstrip())
+        i += 1
+
+    merged = "\n".join(out).strip()
+    merged = re.sub(r"\n{3,}", "\n\n", merged)
+    return merged.strip()
+
+
 def is_lab_ocr_rejection_message(text: str) -> bool:
     """Model says the image is not a lab document — replace entire result_text with this message."""
     return "не видно бланка анализа" in (text or "").casefold()
