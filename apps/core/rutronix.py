@@ -37,8 +37,8 @@ def _http_timeout_chat_s() -> float:
 
 
 def _vision_httpx_timeout() -> httpx.Timeout:
-    """Vision: keep each phase bounded; Gunicorn default --timeout 30 counts whole request wall time."""
-    read_s = float(getattr(settings, "RUTRONIX_VISION_READ_S", 20.0))
+    """Vision: keep each phase bounded; whole OCR wall time must stay under Gunicorn --timeout."""
+    read_s = float(getattr(settings, "RUTRONIX_VISION_READ_S", 90.0))
     write_s = float(getattr(settings, "RUTRONIX_VISION_WRITE_S", 120.0))
     connect_s = float(getattr(settings, "RUTRONIX_VISION_CONNECT_S", 12.0))
     # pool: acquiring connection from pool (rare stall)

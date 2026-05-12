@@ -391,16 +391,16 @@ RUTRONIX_MODEL = os.getenv('RUTRONIX_MODEL', 'one-perfect-answer').strip()
 RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').strip()
 # httpx: text chat (uniform timeout, seconds)
 RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '45'))
-# Vision/OCR: split timeouts so a slow RuTronix *read* fails with httpx before Gunicorn SIGKILL (--timeout 30).
-# Raise RUTRONIX_VISION_READ_S only together with Gunicorn --timeout (e.g. 180).
+# Vision/OCR: split timeouts (httpx read = time to first byte + streaming body from RuTronix).
+# Default read 90s — OCR often needs 25–60s; cap read below Gunicorn --timeout (e.g. 120).
 RUTRONIX_VISION_WRITE_S = float(os.getenv('RUTRONIX_VISION_WRITE_S', '120'))
 RUTRONIX_VISION_CONNECT_S = float(os.getenv('RUTRONIX_VISION_CONNECT_S', '12'))
-RUTRONIX_VISION_TIMEOUT_S = float(os.getenv('RUTRONIX_VISION_TIMEOUT_S', '25'))
+RUTRONIX_VISION_TIMEOUT_S = float(os.getenv('RUTRONIX_VISION_TIMEOUT_S', '90'))
 if 'RUTRONIX_VISION_READ_S' in os.environ:
-    RUTRONIX_VISION_READ_S = float(os.getenv('RUTRONIX_VISION_READ_S', '20'))
+    RUTRONIX_VISION_READ_S = float(os.getenv('RUTRONIX_VISION_READ_S', '90'))
 else:
-    # Legacy: only RUTRONIX_VISION_TIMEOUT_S — keep read under typical Gunicorn --timeout 30.
-    RUTRONIX_VISION_READ_S = min(RUTRONIX_VISION_TIMEOUT_S, 22.0)
+    # Legacy single knob: read follows RUTRONIX_VISION_TIMEOUT_S (no artificial 22s cap).
+    RUTRONIX_VISION_READ_S = RUTRONIX_VISION_TIMEOUT_S
 # Before RuTronix vision: resize + JPEG (see apps/core/rutronix.py). OCR still needs Gunicorn --timeout >= 60–120 on slow providers.
 RUTRONIX_VISION_MAX_IMAGE_SIDE = int(os.getenv('RUTRONIX_VISION_MAX_IMAGE_SIDE', '1280'))
 RUTRONIX_VISION_JPEG_QUALITY = int(os.getenv('RUTRONIX_VISION_JPEG_QUALITY', '82'))

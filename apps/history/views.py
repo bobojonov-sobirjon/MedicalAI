@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.db.models import Q
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from django.db import transaction
+import httpx
 from rest_framework import status
 from rest_framework.exceptions import APIException
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -315,6 +316,16 @@ class AnalysisOcrFormView(APIView):
                         "detail": "Не настроен ключ ИИ для OCR: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."
                     },
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            except httpx.TimeoutException:
+                return Response(
+                    {
+                        "detail": (
+                            "Таймаут ответа RuTronix (OCR). В .env увеличьте RUTRONIX_VISION_READ_S "
+                            "и/или RUTRONIX_VISION_TIMEOUT_S; на сервере — gunicorn --timeout и proxy_read_timeout."
+                        )
+                    },
+                    status=status.HTTP_504_GATEWAY_TIMEOUT,
                 )
             except Exception as exc:  # pragma: no cover
                 return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
