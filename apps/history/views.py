@@ -4,6 +4,7 @@ from django.db.models import Q
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from django.db import transaction
 from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -335,11 +336,18 @@ class MyPrescriptionListCreateView(APIView):
         responses={201: PrescriptionSerializer},
     )
     def post(self, request):
-        s = PrescriptionCreateMultipartSerializer(data=request.data, files=request.FILES, context={"request": request})
-        s.is_valid(raise_exception=True)
         try:
+            s = PrescriptionCreateMultipartSerializer(
+                data=request.data, files=request.FILES, context={"request": request}
+            )
+            s.is_valid(raise_exception=True)
             obj = s.save()
-            return Response(PrescriptionSerializer(obj, context={"request": request}).data, status=status.HTTP_201_CREATED)
+            return Response(
+                PrescriptionSerializer(obj, context={"request": request}).data,
+                status=status.HTTP_201_CREATED,
+            )
+        except APIException:
+            raise
         except Exception as exc:  # pragma: no cover
             return _prescription_save_error_response(exc)
 
@@ -363,10 +371,12 @@ class MyPrescriptionDetailView(APIView):
         s = PrescriptionUpsertSerializer(
             instance=obj, data=request.data, partial=True, context={"request": request}
         )
-        s.is_valid(raise_exception=True)
         try:
+            s.is_valid(raise_exception=True)
             obj = s.save()
             return Response(PrescriptionSerializer(obj, context={"request": request}).data)
+        except APIException:
+            raise
         except Exception as exc:  # pragma: no cover
             return _prescription_save_error_response(exc)
 

@@ -1,8 +1,12 @@
+import logging
+
 from django.http import JsonResponse
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import Http404
 from rest_framework import status
 from rest_framework.exceptions import APIException
+
+logger = logging.getLogger(__name__)
 
 
 # Middleware for handling JSON error responses
@@ -27,7 +31,13 @@ class JsonErrorResponseMiddleware:
             detail = getattr(exception, "detail", None)
             return JsonResponse({"detail": detail if detail is not None else "Ошибка запроса."}, status=exception.status_code)
 
-        # Fallback
+        # Fallback — log full traceback (Gunicorn/journalctl) while keeping a safe client message.
+        logger.error(
+            "Unhandled exception %s on %s",
+            type(exception).__name__,
+            request.path,
+            exc_info=(type(exception), exception, exception.__traceback__),
+        )
         return JsonResponse({"detail": "Внутренняя ошибка сервера."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
