@@ -35,8 +35,12 @@ def _http_timeout_chat_s() -> float:
     return float(getattr(settings, "RUTRONIX_CHAT_TIMEOUT_S", 45.0))
 
 
-def _http_timeout_vision_s() -> float:
-    return float(getattr(settings, "RUTRONIX_VISION_TIMEOUT_S", 25.0))
+def _vision_httpx_timeout() -> httpx.Timeout:
+    """Separate read/write so large JSON upload can be slow but RuTronix *response* read is capped (Gunicorn)."""
+    read_s = float(getattr(settings, "RUTRONIX_VISION_READ_S", 20.0))
+    write_s = float(getattr(settings, "RUTRONIX_VISION_WRITE_S", 120.0))
+    connect_s = float(getattr(settings, "RUTRONIX_VISION_CONNECT_S", 12.0))
+    return httpx.Timeout(connect=connect_s, read=read_s, write=write_s, pool=10.0)
 
 
 def _assistant_text_from_message(msg: dict[str, Any] | None) -> str:
@@ -69,7 +73,7 @@ def chat_completions(
     model: str | None = None,
     temperature: float = 0.2,
     max_completion_tokens: int = 2048,
-    timeout_s: float | None = None,
+    timeout: float | httpx.Timeout | None = None,
 ) -> dict[str, Any]:
     """
     RuTronix OpenAI-compatible chat completions.
@@ -79,8 +83,11 @@ def chat_completions(
     if not rutronix_configured():
         raise RuTronixConfigError("RUTRONIX_API_KEY is not set")
 
-    if timeout_s is None:
-        timeout_s = _http_timeout_chat_s()
+    client_timeout: float | httpx.Timeout
+    if timeout is None:
+        client_timeout = _http_timeout_chat_s()
+    else:
+        client_timeout = timeout
 
     url = f"{_base_url()}/functions/v1/chat-completions"
     headers = {
@@ -94,7 +101,7 @@ def chat_completions(
         "max_completion_tokens": int(max_completion_tokens),
     }
 
-    with httpx.Client(timeout=timeout_s) as client:
+    with httpx.Client(timeout=client_timeout) as client:
         r = client.post(url, headers=headers, json=payload)
         if r.status_code == 401:
             raise RuTronixUnauthorized("RuTronix API key is invalid (401)")
@@ -159,7 +166,6 @@ def complete_with_image_plain(
     mime_type: str = "image/jpeg",
     temperature: float = 0.1,
     max_completion_tokens: int = 4096,
-    timeout_s: float | None = None,
 ) -> str:
     """
     OpenAI-style chat completion with one image (data URL) + text; returns assistant plain text.
@@ -185,12 +191,11 @@ def complete_with_image_plain(
         },
     ]
 
-    vision_timeout = timeout_s if timeout_s is not None else _http_timeout_vision_s()
     resp = chat_completions(
         messages=messages,
         temperature=temperature,
         max_completion_tokens=max_completion_tokens,
-        timeout_s=vision_timeout,
+        timeout=_vision_httpx_timeout(),
     )
     return _assistant_text_from_message((resp.get("choices") or [{}])[0].get("message") or {})
 
