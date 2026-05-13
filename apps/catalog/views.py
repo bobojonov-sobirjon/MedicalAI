@@ -53,26 +53,29 @@ class SymptomSearchView(APIView):
 
     @extend_schema(
         tags=["Помощник"],
-        summary="Поиск симптомов (автодополнение)",
+        summary="Симптомы: список или поиск (автодополнение)",
         description=(
-            "Используется на экране «Помощник» для подсказок при вводе симптомов. "
-            "Возвращает до 40 совпадений по подстроке в названии симптома."
+            "Используется на экране «Помощник». Если `q` не передан — возвращается "
+            "полный список симптомов (до 200). Если `q` передан — поиск по подстроке "
+            "в названии (до 40 совпадений)."
         ),
         parameters=[
             OpenApiParameter(
                 name="q",
                 type=str,
-                required=True,
-                description="Подстрока для поиска симптома (автодополнение)",
+                required=False,
+                description="Подстрока для поиска симптома. Если не передана — вернётся весь список.",
             )
         ],
         responses=SymptomSerializer(many=True),
     )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
-        if len(q) < 1:
-            return Response([])
-        qs = Symptom.objects.filter(name__icontains=q).order_by("name")[:40]
+        qs = Symptom.objects.all().order_by("name")
+        if q:
+            qs = qs.filter(name__icontains=q)[:40]
+        else:
+            qs = qs[:200]
         return Response(SymptomSerializer(qs, many=True).data)
 
 
