@@ -12,20 +12,20 @@ logger = logging.getLogger(__name__)
 def send_password_reset_email(to_email: str, code: str) -> None:
     """Send 6-digit verification code to the user's email (TZ §7.5, email channel)."""
     minutes = int(getattr(settings, "PASSWORD_RESET_CODE_TTL_MINUTES", 15))
-    subject = "MedicAI — Password reset code"
+    subject = "MedicAi — Код для сброса пароля"
     from_email = (getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip() or "no-reply@medicalai.local"
 
     context = {
         "code": code,
         "minutes": minutes,
-        "app_name": "MedicAI",
+        "app_name": "MedicAi",
         "support_email": getattr(settings, "DEFAULT_FROM_EMAIL", "") or "support@medicalai.local",
     }
 
     text_body = (
-        f"Your confirmation code: {code}\n\n"
-        f"The code is valid for {minutes} minutes.\n"
-        "If you did not request a password reset, ignore this email."
+        f"Ваш код подтверждения: {code}\n\n"
+        f"Код действителен в течение {minutes} минут.\n"
+        "Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо."
     )
     html_body = render_to_string("emails/password_reset.html", context)
 

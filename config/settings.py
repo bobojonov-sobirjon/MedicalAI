@@ -192,8 +192,16 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 MEDIA_URL = "/media/"
-# Production uchun /var/www/media, development uchun local media folder
-MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/var/www/media')
+# По умолчанию используем папку media рядом с проектом (удобно для локальной
+# разработки на Windows/macOS/Linux). В проде MEDIA_ROOT задаётся через env,
+# например MEDIA_ROOT=/var/www/media (см. systemd unit / docker compose).
+MEDIA_ROOT = os.getenv('MEDIA_ROOT', os.path.join(BASE_DIR, 'media'))
+
+# Публичный базовый URL приложения. Используется, например, для построения
+# абсолютных ссылок на загруженные файлы (image_url у учреждений и т.п.),
+# когда Django стоит за reverse proxy и request.build_absolute_uri может
+# вернуть неверный хост/схему. Пример: https://api.medicalai.com
+PUBLIC_BASE_URL = (os.getenv('PUBLIC_BASE_URL', '') or '').rstrip('/')
 # OCR (RuTronix) часто >30 с: без gunicorn.conf.py Gunicorn убивает воркер (WORKER TIMEOUT). См. gunicorn.conf.py и deploy/medical.service.example.
 
 

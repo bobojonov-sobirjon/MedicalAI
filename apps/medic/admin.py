@@ -37,7 +37,22 @@ class CityAdmin(admin.ModelAdmin):
 class MedicalFacilityAdmin(admin.ModelAdmin):
     list_display = ("name", "kind", "city", "phone", "is_active")
     list_filter = ("kind", "city", "is_active")
-    search_fields = ("name", "address")
+    search_fields = ("name", "address", "description")
+    fields = (
+        "kind",
+        "city",
+        "name",
+        "address",
+        "phone",
+        "hours_text",
+        "description",
+        "image",
+        "latitude",
+        "longitude",
+        "external_source",
+        "external_id",
+        "is_active",
+    )
 
 
 @admin.register(UsefulTip)

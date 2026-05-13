@@ -124,6 +124,48 @@ class CityListView(APIView):
         return Response([{"id": c.id, "name": c.name} for c in rows[:limit]])
 
 
+def _facility_image_url(request, obj: "MedicalFacility") -> str | None:
+    """Return absolute URL for facility image, if any.
+
+    Приоритет:
+    1) settings.PUBLIC_BASE_URL (если задан) — стабильный публичный URL
+       (например, за reverse proxy / Nginx).
+    2) request.build_absolute_uri — fallback на хост текущего запроса.
+    """
+    if not getattr(obj, "image", None):
+        return None
+    try:
+        url = obj.image.url
+    except Exception:
+        return None
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    base = (getattr(settings, "PUBLIC_BASE_URL", "") or "").rstrip("/")
+    if base:
+        if not url.startswith("/"):
+            url = "/" + url
+        return f"{base}{url}"
+    if request is not None:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            return url
+    return url
+
+
+def _facility_map_url(obj: "MedicalFacility") -> str | None:
+    """Build a convenient Google Maps link for the facility."""
+    if obj.latitude is not None and obj.longitude is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={obj.latitude},{obj.longitude}"
+    if obj.address:
+        from urllib.parse import quote_plus
+
+        return f"https://www.google.com/maps/search/?api=1&query={quote_plus(obj.address)}"
+    return None
+
+
 class FacilityListView(APIView):
     permission_classes = [AllowAny]
 
@@ -170,6 +212,8 @@ class FacilityListView(APIView):
                 "address": o.address,
                 "phone": o.phone,
                 "hours_text": o.hours_text,
+                "description": o.description,
+                "image_url": _facility_image_url(request, o),
                 "latitude": str(o.latitude) if o.latitude is not None else None,
                 "longitude": str(o.longitude) if o.longitude is not None else None,
                 "city_id": o.city_id,
@@ -196,6 +240,9 @@ class FacilityDetailView(APIView):
                 "address": o.address,
                 "phone": o.phone,
                 "hours_text": o.hours_text,
+                "description": o.description,
+                "image_url": _facility_image_url(request, o),
+                "map_url": _facility_map_url(o),
                 "latitude": str(o.latitude) if o.latitude is not None else None,
                 "longitude": str(o.longitude) if o.longitude is not None else None,
                 "city": {"id": o.city_id, "name": o.city.name},
@@ -862,13 +909,24 @@ class RelaxFeedView(APIView):
 class FaqSearchView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(tags=["Помощник"], summary="Поиск по БД вопрос/ответ (ТЗ §6.1)")
+    @extend_schema(
+        tags=["Помощник"],
+        summary="FAQ: список всех вопросов или поиск по вопрос/ответ",
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                type=str,
+                required=False,
+                description="Поиск по вопросу или ответу. Если не передан — возвращаются все активные FAQ.",
+            ),
+        ],
+    )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
-        if len(q) < 2:
-            return Response([])
-        qs = FaqItem.objects.filter(is_active=True).filter(Q(question__icontains=q) | Q(answer__icontains=q))[:30]
-        return Response([{"id": x.id, "question": x.question, "answer": x.answer[:2000]} for x in qs])
+        qs = FaqItem.objects.filter(is_active=True).order_by("id")
+        if q:
+            qs = qs.filter(Q(question__icontains=q) | Q(answer__icontains=q))
+        return Response([{"id": x.id, "question": x.question, "answer": x.answer[:2000]} for x in qs[:100]])
 
 
 class SurveySubmitView(APIView):
