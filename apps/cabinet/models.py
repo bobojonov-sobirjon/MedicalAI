@@ -27,8 +27,8 @@ class CabinetItem(models.Model):
     expires_at = models.DateField("Годен до", blank=True, null=True)
     note = models.TextField("Заметка", blank=True, default="")
     photo = models.ImageField("Фото упаковки", upload_to="cabinet/", blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
 
     class Meta:
         verbose_name = "Запись аптечки"

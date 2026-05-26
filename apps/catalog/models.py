@@ -44,7 +44,7 @@ class BodyPart(TimeStampedModel):
 
     code = models.SlugField("Код", max_length=64, unique=True)
     label = models.CharField("Название", max_length=128)
-    sort_order = models.PositiveIntegerField(default=0)
+    sort_order = models.PositiveIntegerField("Порядок", default=0)
 
     class Meta:
         verbose_name = "Часть тела"

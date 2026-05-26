@@ -1,12 +1,26 @@
 from django.contrib import admin
 
-from .models import Disease, Drug, DrugViewLog
+from .models import BodyPart, Disease, Drug, DrugViewLog, Symptom
 
 
 @admin.register(Disease)
 class DiseaseAdmin(admin.ModelAdmin):
     list_display = ("name", "created_at", "updated_at")
     search_fields = ("name",)
+
+
+@admin.register(Symptom)
+class SymptomAdmin(admin.ModelAdmin):
+    list_display = ("name", "aliases")
+    search_fields = ("name", "aliases")
+
+
+@admin.register(BodyPart)
+class BodyPartAdmin(admin.ModelAdmin):
+    list_display = ("label", "code", "sort_order")
+    list_filter = ("code",)
+    search_fields = ("label", "code")
+    ordering = ("sort_order", "label")
 
 
 @admin.register(Drug)

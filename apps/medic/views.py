@@ -31,10 +31,8 @@ from .models import (
     MedicalFacility,
     NotificationEvent,
     PsychologyInquiry,
-    RelaxAsset,
     SearchQueryLog,
     StaticPage,
-    SurveyResponse,
     UsefulTip,
     UsefulFeedSeen,
     UserTipSettings,
@@ -125,34 +123,9 @@ class CityListView(APIView):
 
 
 def _facility_image_url(request, obj: "MedicalFacility") -> str | None:
-    """Return absolute URL for facility image, if any.
+    from apps.core.media_urls import file_field_url
 
-    Приоритет:
-    1) settings.PUBLIC_BASE_URL (если задан) — стабильный публичный URL
-       (например, за reverse proxy / Nginx).
-    2) request.build_absolute_uri — fallback на хост текущего запроса.
-    """
-    if not getattr(obj, "image", None):
-        return None
-    try:
-        url = obj.image.url
-    except Exception:
-        return None
-    if not url:
-        return None
-    if url.startswith("http://") or url.startswith("https://"):
-        return url
-    base = (getattr(settings, "PUBLIC_BASE_URL", "") or "").rstrip("/")
-    if base:
-        if not url.startswith("/"):
-            url = "/" + url
-        return f"{base}{url}"
-    if request is not None:
-        try:
-            return request.build_absolute_uri(url)
-        except Exception:
-            return url
-    return url
+    return file_field_url(request, obj.image if getattr(obj, "image", None) else None)
 
 
 def _facility_map_url(obj: "MedicalFacility") -> str | None:
@@ -878,34 +851,7 @@ class DrugAnalogListView(APIView):
         return Response([{"id": r.id, "name": r.name, "price": str(r.price) if r.price is not None else None} for r in rows])
 
 
-# --- Relax, FAQ, Survey ---
-class RelaxFeedView(APIView):
-    permission_classes = [AllowAny]
-
-    @extend_schema(
-        tags=["Релакс"],
-        summary="Лента релакса (GIF или видео)",
-        parameters=[
-            OpenApiParameter(
-                name="category",
-                type=str,
-                required=False,
-                description="Категория: gif или video",
-            )
-        ],
-    )
-    def get(self, request):
-        cat = (request.query_params.get("category") or "gif").strip()
-        if cat not in ("gif", "video"):
-            cat = "gif"
-        qs = RelaxAsset.objects.filter(is_active=True, category=cat).order_by("sort_order", "id")[:200]
-        out = []
-        for r in qs:
-            url = r.external_url or (request.build_absolute_uri(r.file.url) if r.file else "")
-            out.append({"id": r.id, "title": r.title, "category": r.category, "url": url})
-        return Response(out)
-
-
+# --- FAQ, Survey ---
 class FaqSearchView(APIView):
     permission_classes = [AllowAny]
 
@@ -927,150 +873,6 @@ class FaqSearchView(APIView):
         if q:
             qs = qs.filter(Q(question__icontains=q) | Q(answer__icontains=q))
         return Response([{"id": x.id, "question": x.question, "answer": x.answer[:2000]} for x in qs[:100]])
-
-
-class SurveySubmitView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    class SurveySubmitSerializer(serializers.Serializer):
-        slug = serializers.SlugField()
-        answers = serializers.JSONField()
-        comment = serializers.CharField(max_length=2000, required=False, allow_blank=True)
-
-    @extend_schema(
-        tags=["Контент"],
-        summary="Опрос (всплывающее окно)",
-        request=SurveySubmitSerializer,
-        responses={201: inline_serializer(name="SurveySubmitOk", fields={"ok": serializers.BooleanField()})},
-    )
-    def post(self, request):
-        s = self.SurveySubmitSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        SurveyResponse.objects.create(
-            user=request.user,
-            slug=s.validated_data["slug"],
-            answers=s.validated_data["answers"],
-            comment=s.validated_data.get("comment") or "",
-        )
-        return Response({"ok": True}, status=status.HTTP_201_CREATED)
-
-
-# --- Family ---
-class FamilyLinkListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=["Профиль"],
-        summary="Привязанные профили (семья)",
-        responses={
-            200: {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "member_id": {"type": "integer"},
-                        "label": {"type": "string"},
-                        "member": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "integer"},
-                                "username": {"type": "string"},
-                                "first_name": {"type": "string"},
-                                "last_name": {"type": "string"},
-                                "avatar": {"type": "string", "nullable": True},
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    )
-    def get(self, request):
-        from apps.accounts.models import FamilyLink
-
-        qs = FamilyLink.objects.filter(owner=request.user).select_related("member")
-        return Response(
-            [
-                {
-                    "member_id": x.member_id,
-                    "label": x.label,
-                    "member": {
-                        "id": x.member.id,
-                        "username": x.member.username,
-                        "first_name": x.member.first_name,
-                        "last_name": x.member.last_name,
-                        "avatar": x.member.avatar.url if x.member.avatar else None,
-                    },
-                }
-                for x in qs
-            ]
-        )
-
-    class FamilyLinkCreateSerializer(serializers.Serializer):
-        member_id = serializers.IntegerField(help_text="ID пользователя, которого привязываем (уже зарегистрирован в системе).")
-        label = serializers.CharField(max_length=64, required=False, allow_blank=True, help_text="Подпись, напр. «Мама».")
-
-    @extend_schema(
-        tags=["Профиль"],
-        summary="Привязать существующего пользователя",
-        description=(
-            "В теле JSON передайте `member_id` — первичный ключ пользователя-члена семьи. "
-            "Опционально `label`. Отдельного PATCH для семьи нет: отвязка — DELETE `/api/me/family/<member_id>/`."
-        ),
-        request=FamilyLinkCreateSerializer,
-        responses={
-            201: inline_serializer(
-                name="FamilyLinkCreateResponse",
-                fields={"ok": serializers.BooleanField()},
-            ),
-            400: inline_serializer(
-                name="FamilyLinkCreateError",
-                fields={"detail": serializers.CharField()},
-            ),
-            404: inline_serializer(
-                name="FamilyLinkCreateNotFound",
-                fields={"detail": serializers.CharField()},
-            ),
-        },
-    )
-    def post(self, request):
-        from apps.accounts.models import FamilyLink
-
-        s = self.FamilyLinkCreateSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        mid = s.validated_data["member_id"]
-        if mid == request.user.id:
-            return Response({"detail": "Нельзя привязать самого себя."}, status=status.HTTP_400_BAD_REQUEST)
-        member = User.objects.filter(pk=mid).first()
-        if not member:
-            return Response({"detail": "Пользователь не найден."}, status=status.HTTP_404_NOT_FOUND)
-        FamilyLink.objects.get_or_create(owner=request.user, member=member, defaults={"label": s.validated_data.get("label") or ""})
-        return Response({"ok": True}, status=status.HTTP_201_CREATED)
-
-
-class FamilyLinkDeleteView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=["Профиль"],
-        summary="Отвязать профиль",
-        description="Без тела запроса. Идентификатор члена семьи — в пути URL.",
-        parameters=[
-            OpenApiParameter(
-                name="member_id",
-                type=int,
-                location=OpenApiParameter.PATH,
-                required=True,
-                description="ID пользователя (member), которого отвязываем",
-            ),
-        ],
-        responses={204: None},
-    )
-    def delete(self, request, member_id: int):
-        from apps.accounts.models import FamilyLink
-
-        FamilyLink.objects.filter(owner=request.user, member_id=member_id).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # --- Admin analytics (TZ §5.1 / §8.2.4) ---

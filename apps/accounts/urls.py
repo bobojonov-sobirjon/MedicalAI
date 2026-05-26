@@ -11,6 +11,7 @@ from .views import (
     ForgotPasswordVerifyView,
     ForgotPasswordResetView,
 )
+from .profile_views import ProfileDetailView, ProfileListView
 
 
 urlpatterns = [
@@ -23,5 +24,6 @@ urlpatterns = [
     path("auth/password/change/", PasswordChangeView.as_view(), name="auth-password-change"),
     path("auth/me/", MeView.as_view(), name="auth-me"),
     path("auth/social/", SocialLoginView.as_view(), name="auth-social"),
+    path("me/profiles/", ProfileListView.as_view(), name="me-profiles"),
+    path("me/profiles/<int:profile_id>/", ProfileDetailView.as_view(), name="me-profile-detail"),
 ]
-

@@ -99,7 +99,7 @@ class FamilyLink(models.Model):
         related_name="family_member_of",
     )
     label = models.CharField("Подпись", max_length=64, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
 
     class Meta:
         verbose_name = "Связь семейных аккаунтов"

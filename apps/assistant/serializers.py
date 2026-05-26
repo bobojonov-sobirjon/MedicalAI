@@ -24,10 +24,29 @@ class DiagnoseRequestSerializer(serializers.Serializer):
     )
     temperature_c = serializers.FloatField(required=False, allow_null=True)
     blood_pressure = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    subject_user_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID профиля (вы или привязанный член семьи). По умолчанию — текущий пользователь.",
+    )
+
+    def validate_subject_user_id(self, value):
+        if value in (None, ""):
+            return None
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Требуется авторизация.")
+        from apps.accounts.family_access import resolve_profile_user
+
+        if resolve_profile_user(request.user, int(value)) is None:
+            raise serializers.ValidationError("Недопустимый subject_user_id.")
+        return int(value)
 
 
 class AssistantDiagnosisSerializer(serializers.Serializer):
     id = serializers.IntegerField()
+    subject_user_id = serializers.IntegerField(allow_null=True)
+    subject_user_label = serializers.CharField(allow_blank=True, required=False)
     symptom_ids = serializers.ListField(child=serializers.IntegerField(min_value=1))
     symptoms = serializers.ListField(child=serializers.JSONField(), required=False)
     symptoms_text = serializers.CharField(allow_blank=True)

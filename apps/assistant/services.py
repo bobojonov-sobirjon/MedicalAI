@@ -96,12 +96,14 @@ def _user_context_line(user: User) -> str:
 def run_diagnosis(
     *,
     user: User,
+    profile_user: User | None = None,
     symptom_ids: list[int],
     symptoms_text: str,
     body_part_ids: list[int],
     temperature_c: float | None,
     blood_pressure: str,
 ) -> dict[str, Any]:
+    profile_user = profile_user or user
     symptoms_from_ids, symptoms_resolved = _symptoms_text_from_ids(symptom_ids)
     body_parts_s, body_parts_resolved = _body_parts_from_ids(body_part_ids)
     combined_symptoms = "\n".join([s for s in [symptoms_from_ids.strip(), (symptoms_text or "").strip()] if s])
@@ -122,7 +124,7 @@ def run_diagnosis(
   "disclaimer": "обязательное напоминание про врача и что это не диагноз"
 }"""
 
-    user_prompt = f"""Профиль: {_user_context_line(user)}
+    user_prompt = f"""Профиль: {_user_context_line(profile_user)}
 Части тела: {body_parts_s}
 Температура: {temp_s}
 Давление: {bp_s}

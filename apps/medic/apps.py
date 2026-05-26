@@ -4,7 +4,7 @@ from django.apps import AppConfig
 class MedicConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.medic"
-    verbose_name = "Сервисы (уведомления, контент, поддержка)"
+    verbose_name = "06. Сервисы и контент"
 
     def ready(self) -> None:
         from . import receivers  # noqa: F401

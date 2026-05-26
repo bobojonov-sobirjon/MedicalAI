@@ -1,6 +1,8 @@
 from django.urls import path
 
 from . import views
+from .relax_views import RelaxFeedView
+from .survey_views import SurveyAnswerView, SurveyListView
 
 urlpatterns = [
     path("content/pages/<slug:slug>/", views.StaticPageView.as_view(), name="static-page"),
@@ -23,11 +25,10 @@ urlpatterns = [
     path("catalog/drugs/<int:drug_id>/star-rating/", views.DrugStarRatingView.as_view(), name="drug-star"),
     path("catalog/drugs/<int:drug_id>/discussion/", views.DrugDiscussionView.as_view(), name="drug-discuss"),
     path("catalog/drugs/<int:drug_id>/analogs/", views.DrugAnalogListView.as_view(), name="drug-analogs"),
-    path("relax/feed/", views.RelaxFeedView.as_view(), name="relax-feed"),
+    path("relax/feed/", RelaxFeedView.as_view(), name="relax-feed"),
     path("faq/", views.FaqSearchView.as_view(), name="faq-search"),
-    path("me/survey/", views.SurveySubmitView.as_view(), name="survey-submit"),
-    path("me/family/", views.FamilyLinkListCreateView.as_view(), name="family-list"),
-    path("me/family/<int:member_id>/", views.FamilyLinkDeleteView.as_view(), name="family-delete"),
+    path("surveys/", SurveyListView.as_view(), name="survey-list"),
+    path("me/survey/<slug:slug>/", SurveyAnswerView.as_view(), name="survey-answer"),
     path("admin/metrics/summary/", views.AdminSummaryView.as_view(), name="admin-metrics"),
     path("me/voice/transcribe/", views.VoiceTranscribeView.as_view(), name="voice-transcribe"),
 ]

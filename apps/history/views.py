@@ -70,7 +70,13 @@ class MyDiseaseRecordListCreateView(APIView):
                 required=False,
                 type=str,
                 description="Поиск по названию / симптомам / названию заболевания.",
-            )
+            ),
+            OpenApiParameter(
+                name="subject_user_id",
+                required=False,
+                type=int,
+                description="Фильтр: записи для указанного профиля (вы или член семьи). Без параметра — все ваши записи.",
+            ),
         ],
         responses=DiseaseRecordListSerializer(many=True),
     )
@@ -78,10 +84,18 @@ class MyDiseaseRecordListCreateView(APIView):
         q = _q(request)
         qs = (
             DiseaseRecord.objects.filter(user=request.user)
-            .select_related("disease")
+            .select_related("disease", "subject_user")
             .prefetch_related("drugs", "doctor_visits", "analyses", "prescriptions")
             .order_by("-date_of_illness", "-created_at")
         )
+        sid = request.query_params.get("subject_user_id")
+        if sid and str(sid).isdigit():
+            from apps.accounts.family_access import resolve_profile_user
+
+            profile = resolve_profile_user(request.user, int(sid))
+            if profile is None:
+                return Response({"detail": "Недопустимый subject_user_id."}, status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(subject_user_id=profile.pk)
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(symptoms__icontains=q) | Q(disease__name__icontains=q))
         # Return full cards in list view (same structure as detail).

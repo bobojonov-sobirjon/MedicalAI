@@ -11,6 +11,15 @@ class AssistantDiagnosis(models.Model):
         on_delete=models.CASCADE,
         related_name="assistant_diagnoses",
     )
+    subject_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Для кого диагностика",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assistant_diagnoses_as_subject",
+        help_text="Член семьи или сам владелец (ТЗ §8.2.3).",
+    )
 
     symptom_ids = models.JSONField("ID симптомов", default=list)
     symptoms_text = models.TextField("Доп. симптомы (текст)", blank=True, default="")

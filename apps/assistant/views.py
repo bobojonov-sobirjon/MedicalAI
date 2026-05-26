@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.family_access import resolve_profile_user
+from apps.accounts.models import FamilyLink
 from apps.catalog.models import BodyPart, Symptom
 
 from .models import AssistantDiagnosis
@@ -36,6 +38,17 @@ def _public_result(full_result: dict) -> dict:
     }
 
 
+def _subject_payload(row: AssistantDiagnosis) -> dict:
+    subj = row.subject_user
+    if not subj:
+        return {"subject_user_id": None, "subject_user_label": ""}
+    label = ""
+    if row.user_id != subj.pk:
+        link = FamilyLink.objects.filter(owner_id=row.user_id, member_id=subj.pk).first()
+        label = (link.label if link else "") or subj.get_full_name() or subj.username
+    return {"subject_user_id": subj.pk, "subject_user_label": label}
+
+
 def _public_context(full_result: dict) -> dict:
     """
     Context that is useful for the UI (and fallback when AI is unavailable).
@@ -60,11 +73,14 @@ class DiagnoseView(APIView):
         request=DiagnoseRequestSerializer,
     )
     def post(self, request):
-        ser = DiagnoseRequestSerializer(data=request.data)
+        ser = DiagnoseRequestSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
+        subject_id = data.get("subject_user_id")
+        profile_user = resolve_profile_user(request.user, subject_id) or request.user
         out = run_diagnosis(
             user=request.user,
+            profile_user=profile_user,
             symptom_ids=data["symptoms"],
             symptoms_text=(data.get("symptoms_text") or "").strip(),
             body_part_ids=data.get("body_parts") or [],
@@ -73,6 +89,7 @@ class DiagnoseView(APIView):
         )
         row = AssistantDiagnosis.objects.create(
             user=request.user,
+            subject_user=profile_user,
             symptom_ids=data["symptoms"],
             symptoms_text=(data.get("symptoms_text") or "").strip(),
             body_part_ids=data.get("body_parts") or [],
@@ -83,6 +100,7 @@ class DiagnoseView(APIView):
         return Response(
             {
                 "diagnosis_id": row.id,
+                **_subject_payload(row),
                 "symptoms_resolved": out.get("symptoms_resolved", []),
                 "body_parts_resolved": out.get("body_parts_resolved", []),
                 **_public_context(out),
@@ -95,9 +113,25 @@ class DiagnoseView(APIView):
 class MyAssistantDiagnosisListView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(tags=["Помощник"], summary="История помощника (мои запросы)", responses=AssistantDiagnosisSerializer(many=True))
+    @extend_schema(
+        tags=["Помощник"],
+        summary="История помощника (мои запросы)",
+        parameters=[
+            OpenApiParameter(
+                name="subject_user_id",
+                type=int,
+                required=False,
+                description="Фильтр по профилю, для которого делалась диагностика.",
+            ),
+        ],
+        responses=AssistantDiagnosisSerializer(many=True),
+    )
     def get(self, request):
-        qs = AssistantDiagnosis.objects.filter(user=request.user).order_by("-created_at")[:200]
+        qs = AssistantDiagnosis.objects.filter(user=request.user).select_related("subject_user").order_by("-created_at")
+        sid = request.query_params.get("subject_user_id")
+        if sid and str(sid).isdigit():
+            qs = qs.filter(subject_user_id=int(sid))
+        qs = qs[:200]
 
         all_symptom_ids: set[int] = set()
         all_body_part_ids: set[int] = set()
@@ -119,6 +153,7 @@ class MyAssistantDiagnosisListView(APIView):
             [
                 {
                     "id": x.id,
+                    **_subject_payload(x),
                     "symptom_ids": x.symptom_ids,
                     "symptoms": _resolve_ordered(x.symptom_ids or [], symptoms_by_id),
                     "symptoms_text": x.symptoms_text,
@@ -142,7 +177,7 @@ class MyAssistantDiagnosisDetailView(APIView):
 
     @extend_schema(tags=["Помощник"], summary="Получить один результат помощника", responses=AssistantDiagnosisSerializer)
     def get(self, request, pk: int):
-        x = AssistantDiagnosis.objects.filter(user=request.user, pk=pk).first()
+        x = AssistantDiagnosis.objects.filter(user=request.user, pk=pk).select_related("subject_user").first()
         if not x:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -158,6 +193,7 @@ class MyAssistantDiagnosisDetailView(APIView):
         return Response(
             {
                 "id": x.id,
+                **_subject_payload(x),
                 "symptom_ids": x.symptom_ids,
                 "symptoms": _resolve_ordered(x.symptom_ids or [], symptoms_by_id),
                 "symptoms_text": x.symptoms_text,

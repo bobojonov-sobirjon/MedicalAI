@@ -11,7 +11,7 @@ from apps.catalog.models import BodyPart, Disease, Drug
 
 
 class Command(BaseCommand):
-    help = "Add fake Diseases and Drugs (default: 100 each)."
+    help = "Добавить тестовые болезни и лекарства. Полное наполнение: python manage.py seed_demo_data"
 
     def add_arguments(self, parser):
         parser.add_argument("--count", type=int, default=100, help="How many diseases and drugs to create.")

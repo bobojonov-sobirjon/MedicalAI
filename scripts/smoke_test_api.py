@@ -292,7 +292,14 @@ def run_smoke(*, base_url: str, token: str) -> int:
     do("Relax feed video", "GET", "/api/relax/feed/", auth=False, params={"category": "video"}, expected={200})
 
     # --- Survey (JWT) ---
-    do("Survey submit", "POST", "/api/me/survey/", json_body={"slug": "smoke", "answers": {"q1": "a"}, "comment": ""}, expected={201, 400})
+    do("Survey list", "GET", "/api/surveys/", expected={200})
+    do(
+        "Survey answer had_covid",
+        "POST",
+        "/api/me/survey/had_covid/",
+        json_body={"answers": {"value": True}, "comment": ""},
+        expected={201, 409},
+    )
 
     # --- History (JWT) ---
     rec = do(

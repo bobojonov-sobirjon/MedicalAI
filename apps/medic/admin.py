@@ -21,6 +21,7 @@ from .models import (
     RelaxAsset,
     SearchQueryLog,
     StaticPage,
+    Survey,
     SurveyResponse,
     UsefulTip,
     UserTipSettings,
@@ -147,6 +148,9 @@ class DiscussionPostAdmin(admin.ModelAdmin):
 @admin.register(RelaxAsset)
 class RelaxAssetAdmin(admin.ModelAdmin):
     list_display = ("title", "category", "is_active", "sort_order")
+    list_filter = ("category", "is_active")
+    search_fields = ("title",)
+    fields = ("category", "title", "file", "external_url", "is_active", "sort_order")
 
 
 @admin.register(FaqItem)
@@ -159,9 +163,19 @@ class DrugAnalogAdmin(admin.ModelAdmin):
     list_display = ("drug", "name", "price")
 
 
+@admin.register(Survey)
+class SurveyAdmin(admin.ModelAdmin):
+    list_display = ("slug", "question_text", "answer_type", "is_active", "sort_order")
+    list_filter = ("is_active", "answer_type")
+    search_fields = ("slug", "title", "question_text")
+    ordering = ("sort_order", "id")
+
+
 @admin.register(SurveyResponse)
 class SurveyResponseAdmin(admin.ModelAdmin):
-    list_display = ("user", "slug", "created_at")
+    list_display = ("user", "survey", "created_at")
+    list_filter = ("survey",)
+    search_fields = ("user__username", "user__email", "survey__slug")
 
 
 @admin.register(AuditLogEntry)
