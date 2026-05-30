@@ -9,6 +9,10 @@ from rest_framework.exceptions import APIException
 logger = logging.getLogger(__name__)
 
 
+def _is_admin_request(request) -> bool:
+    return request.path.startswith("/admin/")
+
+
 # Middleware for handling JSON error responses
 class JsonErrorResponseMiddleware:
     def __init__(self, get_response):
@@ -20,6 +24,10 @@ class JsonErrorResponseMiddleware:
         return response
 
     def process_exception(self, request, exception):
+        # Let Django admin show normal HTML errors (and DEBUG tracebacks).
+        if _is_admin_request(request):
+            return None
+
         # Convert common exceptions to correct HTTP codes instead of always 500.
         if isinstance(exception, Http404):
             return JsonResponse({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
@@ -50,8 +58,8 @@ class Custom404Middleware:
         # Get the response from the view function
         response = self.get_response(request)
         
-        # Only handle 404 for non-API requests
-        if not request.path.startswith('/api/'):
+        # Only handle 404 for non-API, non-admin requests
+        if not request.path.startswith("/api/") and not _is_admin_request(request):
             if response is None:
                 # If response is None, handle 404 error
                 return self.handle_404(request)

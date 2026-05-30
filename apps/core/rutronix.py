@@ -20,6 +20,14 @@ class RuTronixUnauthorized(RuntimeError):
     """Raised when API key is missing/invalid (HTTP 401)."""
 
 
+class RuTronixUpstreamError(RuntimeError):
+    """Raised when RuTronix returns 5xx or other upstream failure."""
+
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def rutronix_configured() -> bool:
     return bool(getattr(settings, "RUTRONIX_API_KEY", None) and str(settings.RUTRONIX_API_KEY).strip())
 
@@ -146,6 +154,12 @@ def chat_completions(
             raise RuTronixUnauthorized("RuTronix API key is invalid (401)")
         if r.status_code == 402:
             raise RuTronixPaymentRequired("RuTronix balance is insufficient (402)")
+        if r.status_code >= 500:
+            detail = (r.text or "")[:300].strip()
+            raise RuTronixUpstreamError(
+                f"RuTronix server error ({r.status_code})" + (f": {detail}" if detail else ""),
+                status_code=r.status_code,
+            )
         r.raise_for_status()
         try:
             data = r.json()

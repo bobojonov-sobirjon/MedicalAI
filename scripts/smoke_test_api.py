@@ -251,11 +251,19 @@ def run_smoke(*, base_url: str, token: str) -> int:
     if image_path and os.path.exists(image_path):
         with open(image_path, "rb") as f:
             do(
-                "Cabinet recognize (image)",
+                "Cabinet recognize (single)",
                 "POST",
                 "/api/me/cabinet/recognize/",
                 files={"image": (os.path.basename(image_path), f, "image/jpeg")},
-                expected={200, 400, 503},
+                expected={200, 400, 503, 504},
+            )
+        with open(image_path, "rb") as f:
+            do(
+                "Cabinet recognize (batch)",
+                "POST",
+                "/api/me/cabinet/recognize/?mode=batch",
+                files={"image": (os.path.basename(image_path), f, "image/jpeg")},
+                expected={200, 400, 503, 504},
             )
     else:
         print("[SKIP] Cabinet recognize: set CABINET_TEST_IMAGE env var to a local image path\n")

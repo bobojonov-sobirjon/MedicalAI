@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from drf_spectacular.utils import extend_schema, inline_serializer, OpenApiParameter
+import httpx
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -11,10 +12,55 @@ from django.db.models import Q
 
 from apps.catalog.models import Drug, DrugViewLog
 from apps.catalog.serializers import DrugSerializer
+from apps.core.gemini import GeminiConfigError
+from apps.core.rutronix import (
+    RuTronixConfigError,
+    RuTronixPaymentRequired,
+    RuTronixUnauthorized,
+    RuTronixUpstreamError,
+)
 
 from .models import CabinetItem
 from .serializers import CabinetItemSerializer
-from .services import recognize_cabinet_upload
+from .services import (
+    build_recognition_result,
+    recognize_cabinet_batch,
+    recognize_cabinet_upload,
+)
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_image_upload(request):
+    upload = request.FILES.get("image")
+    if not upload:
+        return None, None, None
+    upload.seek(0)
+    raw = upload.read()
+    mime = upload.content_type or "image/jpeg"
+    if mime not in ("image/jpeg", "image/png", "image/webp"):
+        mime = "image/jpeg"
+    upload.seek(0)
+    return upload, raw, mime
+
+
+def _serialize_recognition(request, result: dict) -> dict:
+    drug = result.get("matched_drug")
+    cabinet_item = result.get("cabinet_item")
+    return {
+        "recognized_name": result.get("recognized_name") or "",
+        "matched_drug_id": result.get("matched_drug_id"),
+        "matched_drug": DrugSerializer(drug, context={"request": request}).data if drug else None,
+        "added_to_cabinet": bool(result.get("added_to_cabinet")),
+        "already_in_cabinet": bool(result.get("already_in_cabinet")),
+        "cabinet_item": (
+            CabinetItemSerializer(cabinet_item, context={"request": request}).data if cabinet_item else None
+        ),
+    }
 
 
 class CabinetItemListCreateView(APIView):
@@ -69,18 +115,46 @@ class CabinetItemDetailView(APIView):
 
 
 class CabinetRecognizeView(APIView):
+    """
+    Распознавание лекарств по фото (одна упаковка или несколько на одном снимке).
+    Опционально сразу добавляет найденные препараты в аптечку.
+    """
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     @extend_schema(
         tags=["Аптечка"],
-        summary="Распознать лекарство по фото",
-        description="multipart: поле `image` (файл). Возвращает строку и при возможности совпадение из справочника.",
+        summary="Распознать лекарство(а) по фото",
+        description=(
+            "multipart: поле `image` (файл).\n\n"
+            "- `mode=single` (по умолчанию) — одна упаковка, ответ как раньше + поля added_to_cabinet.\n"
+            "- `mode=batch` — все видимые упаковки на фото, ответ `{ items: [...], count }`.\n"
+            "- `add_to_cabinet=true` — сразу добавить распознанные препараты в аптечку "
+            "(дубликаты пропускаются, already_in_cabinet=true)."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="mode",
+                type=str,
+                required=False,
+                enum=["single", "batch"],
+                description="single — одна упаковка; batch — несколько на одном фото.",
+            ),
+            OpenApiParameter(
+                name="add_to_cabinet",
+                type=bool,
+                required=False,
+                description="true — сразу добавить в аптечку после распознавания.",
+            ),
+        ],
         request={
             "multipart/form-data": {
                 "type": "object",
                 "properties": {
-                    "image": {"type": "string", "format": "binary", "description": "Фото упаковки/этикетки."},
+                    "image": {"type": "string", "format": "binary", "description": "Фото упаковки или нескольких упаковок."},
+                    "mode": {"type": "string", "enum": ["single", "batch"]},
+                    "add_to_cabinet": {"type": "boolean"},
                 },
                 "required": ["image"],
             },
@@ -89,35 +163,95 @@ class CabinetRecognizeView(APIView):
             200: inline_serializer(
                 name="CabinetRecognizeResponse",
                 fields={
-                    "recognized_name": serializers.CharField(),
-                    "matched_drug_id": serializers.IntegerField(allow_null=True),
-                    "matched_drug": serializers.JSONField(
-                        allow_null=True,
-                        help_text="Объект лекарства (как в DrugSerializer) или null.",
-                    ),
+                    "mode": serializers.CharField(),
+                    "recognized_name": serializers.CharField(required=False),
+                    "matched_drug_id": serializers.IntegerField(required=False, allow_null=True),
+                    "matched_drug": serializers.JSONField(required=False, allow_null=True),
+                    "added_to_cabinet": serializers.BooleanField(required=False),
+                    "already_in_cabinet": serializers.BooleanField(required=False),
+                    "cabinet_item": serializers.JSONField(required=False, allow_null=True),
+                    "items": serializers.ListField(required=False, child=serializers.DictField()),
+                    "count": serializers.IntegerField(required=False),
                 },
             ),
         },
     )
     def post(self, request):
-        upload = request.FILES.get("image")
+        upload, raw, mime = _read_image_upload(request)
         if not upload:
             return Response({"detail": "Поле image обязательно."}, status=status.HTTP_400_BAD_REQUEST)
-        upload.seek(0)
-        raw = upload.read()
-        mime = upload.content_type or "image/jpeg"
-        if mime not in ("image/jpeg", "image/png", "image/webp"):
-            mime = "image/jpeg"
-        upload.seek(0)
-        data = recognize_cabinet_upload(raw, mime, source_file=upload)
-        drug = data["matched_drug"]
-        return Response(
-            {
-                "recognized_name": data["recognized_name"],
-                "matched_drug_id": data["matched_drug_id"],
-                "matched_drug": DrugSerializer(drug, context={"request": request}).data if drug else None,
-            }
+
+        mode = (request.data.get("mode") or request.query_params.get("mode") or "single").strip().lower()
+        if mode not in {"single", "batch"}:
+            return Response({"detail": "mode должен быть single или batch."}, status=status.HTTP_400_BAD_REQUEST)
+
+        add_to_cabinet = _parse_bool(
+            request.data.get("add_to_cabinet", request.query_params.get("add_to_cabinet"))
         )
+
+        try:
+            if mode == "batch":
+                recognitions = recognize_cabinet_batch(raw, mime)
+                items = [
+                    _serialize_recognition(
+                        request,
+                        build_recognition_result(
+                            request.user,
+                            row,
+                            add_to_cabinet=add_to_cabinet,
+                        ),
+                    )
+                    for row in recognitions
+                ]
+                return Response({"mode": "batch", "items": items, "count": len(items)})
+
+            recognition = recognize_cabinet_upload(raw, mime, source_file=upload)
+            payload = _serialize_recognition(
+                request,
+                build_recognition_result(
+                    request.user,
+                    recognition,
+                    add_to_cabinet=add_to_cabinet,
+                    photo=upload if add_to_cabinet else None,
+                ),
+            )
+            return Response({"mode": "single", **payload})
+        except (GeminiConfigError, RuTronixConfigError):
+            return Response(
+                {"detail": "Не настроен ключ ИИ: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except RuTronixUnauthorized:
+            return Response(
+                {"detail": "Неверный RUTRONIX_API_KEY. Проверьте ключ в .env."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except RuTronixPaymentRequired:
+            return Response(
+                {"detail": "Недостаточно баланса RuTronix. Пополните счёт или задайте GEMINI_API_KEY как запасной вариант."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except (RuTronixUpstreamError, httpx.HTTPStatusError) as exc:
+            return Response(
+                {
+                    "detail": (
+                        "Сервис распознавания RuTronix временно недоступен. "
+                        "Повторите позже или задайте GEMINI_API_KEY в .env."
+                    ),
+                    "error": str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except httpx.TimeoutException:
+            return Response(
+                {
+                    "detail": (
+                        "Таймаут ответа ИИ при распознавании. Увеличьте RUTRONIX_VISION_TIMEOUT_S "
+                        "и gunicorn --timeout на сервере."
+                    )
+                },
+                status=status.HTTP_504_GATEWAY_TIMEOUT,
+            )
 
 
 class RecentDrugViewsView(APIView):

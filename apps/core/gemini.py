@@ -295,46 +295,142 @@ def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> 
     return normalize_lab_ocr_plain_text((resp.text or "").strip())
 
 
-def recognize_drug_name_from_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> str:
-    """Return best-effort commercial drug name from packaging photo (Russian market)."""
-    system = (
-        "Ты распознаёшь торговое название лекарства с фото упаковки. "
-        "Ответь одной строкой: только название препарата как на упаковке, без пояснений. "
-        "Если не уверен — кратко: Не удалось распознать."
-    )
-    user_q = "Какое название лекарства на фото? Одна строка."
+_DRUG_VISION_SYSTEM = (
+    "Ты распознаёшь торговые названия лекарств на фото упаковок (рынок РФ/СНГ). "
+    "Бери крупное торговое название на упаковке (например «Эликвис», а не «апиксабан»). "
+    "Не включай дозировку, форму выпуска и производителя."
+)
 
+
+def _complete_drug_vision_plain(
+    *,
+    system_instruction: str,
+    user_text: str,
+    image_bytes: bytes,
+    mime_type: str,
+) -> str:
     try:
-        from .rutronix import complete_with_image_plain, rutronix_configured
+        from .rutronix import (
+            RuTronixPaymentRequired,
+            RuTronixUpstreamError,
+            complete_with_image_plain,
+            rutronix_configured,
+        )
     except Exception:  # pragma: no cover
         complete_with_image_plain = None
         rutronix_configured = lambda: False  # type: ignore
+        RuTronixUpstreamError = RuntimeError  # type: ignore
+        RuTronixPaymentRequired = RuntimeError  # type: ignore
 
+    rutronix_failed: BaseException | None = None
     if complete_with_image_plain and rutronix_configured():
-        text = complete_with_image_plain(
-            system_instruction=system,
-            user_text=user_q,
-            image_bytes=image_bytes,
-            mime_type=_mime_type,
-            temperature=0.1,
+        try:
+            return complete_with_image_plain(
+                system_instruction=system_instruction,
+                user_text=user_text,
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+                temperature=0.1,
+            )
+        except (RuTronixUpstreamError, RuTronixPaymentRequired) as exc:
+            rutronix_failed = exc
+
+    if gemini_configured():
+        import google.generativeai as genai
+
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(_model_name(), system_instruction=system_instruction)
+        pil = Image.open(BytesIO(image_bytes))
+        if pil.mode not in ("RGB", "RGBA"):
+            pil = pil.convert("RGB")
+        resp = model.generate_content(
+            [user_text, pil],
+            generation_config=genai.GenerationConfig(temperature=0.1),
         )
-        return (text or "").strip().split("\n")[0].strip()[:255]
+        return (resp.text or "").strip()
 
-    if not gemini_configured():
-        raise GeminiConfigError("Настройте RUTRONIX_API_KEY (распознавание) или GEMINI_API_KEY.")
+    if rutronix_failed is not None:
+        raise rutronix_failed
 
-    import google.generativeai as genai
+    raise GeminiConfigError("Настройте RUTRONIX_API_KEY (распознавание) или GEMINI_API_KEY.")
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(_model_name(), system_instruction=system)
-    pil = Image.open(BytesIO(image_bytes))
-    if pil.mode not in ("RGB", "RGBA"):
-        pil = pil.convert("RGB")
-    resp = model.generate_content(
-        [user_q, pil],
-        generation_config=genai.GenerationConfig(temperature=0.1),
+
+def _normalize_drug_name_line(raw: str) -> str:
+    line = (raw or "").strip().split("\n")[0].strip()
+    line = re.sub(r'^[\d\.\-\*\)]+\s*', "", line).strip(" \"'«»")
+    return line[:255]
+
+
+def _parse_drug_names_json(raw: str) -> list[str]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+
+    payload: Any
+    try:
+        payload = _extract_json_object(text)
+    except json.JSONDecodeError:
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            names = [_normalize_drug_name_line(part) for part in re.split(r"[\n,;]+", text)]
+            return [n for n in names if n and not n.lower().startswith("не удалось")]
+
+    if isinstance(payload, dict):
+        items = payload.get("drugs") or payload.get("items") or payload.get("names") or []
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        name = _normalize_drug_name_line(str(item))
+        if not name or name.lower().startswith("не удалось"):
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def recognize_drug_name_from_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> str:
+    """Return best-effort commercial drug name from packaging photo (Russian market)."""
+    text = _complete_drug_vision_plain(
+        system_instruction=_DRUG_VISION_SYSTEM,
+        user_text=(
+            "На фото одна упаковка лекарства. "
+            "Ответь одной строкой: только торговое название. "
+            "Если не уверен — «Не удалось распознать»."
+        ),
+        image_bytes=image_bytes,
+        mime_type=_mime_type,
     )
-    return (resp.text or "").strip().split("\n")[0].strip()[:255]
+    return _normalize_drug_name_line(text)
+
+
+def recognize_drug_names_from_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> list[str]:
+    """Return all visible commercial drug names from a photo (one or many packages)."""
+    text = _complete_drug_vision_plain(
+        system_instruction=_DRUG_VISION_SYSTEM,
+        user_text=(
+            "На фото может быть одна или несколько упаковок лекарств. "
+            "Верни JSON без markdown: {\"drugs\": [\"Название1\", \"Название2\"]}. "
+            "Только торговые названия. Если ничего не видно — {\"drugs\": []}."
+        ),
+        image_bytes=image_bytes,
+        mime_type=_mime_type,
+    )
+    names = _parse_drug_names_json(text)
+    if names:
+        return names
+    single = _normalize_drug_name_line(text)
+    if single and not single.lower().startswith("не удалось") and not single.startswith("{"):
+        return [single]
+    return []
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
