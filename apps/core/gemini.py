@@ -12,6 +12,10 @@ class GeminiConfigError(RuntimeError):
     """Raised when GEMINI_API_KEY is missing or SDK is unavailable."""
 
 
+class GeminiUnavailableError(RuntimeError):
+    """Raised when Gemini rejects the request (e.g. geo restriction on the server)."""
+
+
 def gemini_configured() -> bool:
     return bool(getattr(settings, "GEMINI_API_KEY", None) and str(settings.GEMINI_API_KEY).strip())
 
@@ -336,23 +340,50 @@ def _complete_drug_vision_plain(
             rutronix_failed = exc
 
     if gemini_configured():
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel(_model_name(), system_instruction=system_instruction)
-        pil = Image.open(BytesIO(image_bytes))
-        if pil.mode not in ("RGB", "RGBA"):
-            pil = pil.convert("RGB")
-        resp = model.generate_content(
-            [user_text, pil],
-            generation_config=genai.GenerationConfig(temperature=0.1),
-        )
-        return (resp.text or "").strip()
+        try:
+            return _gemini_vision_plain(
+                system_instruction=system_instruction,
+                user_text=user_text,
+                image_bytes=image_bytes,
+            )
+        except GeminiUnavailableError as exc:
+            if rutronix_failed is not None:
+                raise rutronix_failed from exc
+            raise
 
     if rutronix_failed is not None:
         raise rutronix_failed
 
     raise GeminiConfigError("Настройте RUTRONIX_API_KEY (распознавание) или GEMINI_API_KEY.")
+
+
+def _gemini_vision_plain(
+    *,
+    system_instruction: str,
+    user_text: str,
+    image_bytes: bytes,
+) -> str:
+    import google.generativeai as genai
+
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(_model_name(), system_instruction=system_instruction)
+    pil = Image.open(BytesIO(image_bytes))
+    if pil.mode not in ("RGB", "RGBA"):
+        pil = pil.convert("RGB")
+    try:
+        resp = model.generate_content(
+            [user_text, pil],
+            generation_config=genai.GenerationConfig(temperature=0.1),
+        )
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "location is not supported" in msg or "user location" in msg:
+            raise GeminiUnavailableError(
+                "Gemini API недоступен в регионе сервера (geo restriction). "
+                "На production используйте RUTRONIX_API_KEY — Gemini с VPS часто блокируется."
+            ) from exc
+        raise
+    return (resp.text or "").strip()
 
 
 def _normalize_drug_name_line(raw: str) -> str:

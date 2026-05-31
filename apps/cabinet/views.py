@@ -12,7 +12,7 @@ from django.db.models import Q
 
 from apps.catalog.models import Drug, DrugViewLog
 from apps.catalog.serializers import DrugSerializer
-from apps.core.gemini import GeminiConfigError
+from apps.core.gemini import GeminiConfigError, GeminiUnavailableError
 from apps.core.rutronix import (
     RuTronixConfigError,
     RuTronixPaymentRequired,
@@ -236,11 +236,23 @@ class CabinetRecognizeView(APIView):
                 {
                     "detail": (
                         "Сервис распознавания RuTronix временно недоступен. "
-                        "Повторите позже или задайте GEMINI_API_KEY в .env."
+                        "Проверьте RUTRONIX_API_KEY и баланс на production."
                     ),
                     "error": str(exc),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except GeminiUnavailableError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "hint": (
+                        "Локально Gemini может работать с вашего ПК, но на сервере 85.198.101.179 "
+                        "Google блокирует регион. Добавьте рабочий RUTRONIX_API_KEY в /var/www/MedicalAI/.env "
+                        "и выполните: systemctl restart medical"
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except httpx.TimeoutException:
             return Response(
