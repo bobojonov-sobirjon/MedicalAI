@@ -466,10 +466,15 @@ PASSWORD_RESET_SESSION_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_SESSION_TTL_M
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash').strip()
 
-# RuTronix (единый API для ИИ-моделей; замена для Gemini в текстовых задачах)
+# RuTronix (единый API для ИИ-моделей)
 RUTRONIX_API_KEY = os.getenv('RUTRONIX_API_KEY', '').strip()
 RUTRONIX_MODEL = os.getenv('RUTRONIX_MODEL', 'one-perfect-answer').strip()
+# Surat/OCR: alohida model (one-perfect-answer faqat matn — vision emas).
+# RuTronix kabinetidagi vision-qo‘llab-quvvatlaydigan model slug (masalan gpt-4o-mini).
+RUTRONIX_VISION_MODEL = os.getenv('RUTRONIX_VISION_MODEL', 'gpt-4o-mini').strip()
 RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').strip()
+# False = faqat RuTronix; Gemini zaxira o‘chirilgan (production uchun tavsiya).
+USE_GEMINI_FALLBACK = os.getenv('USE_GEMINI_FALLBACK', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 # httpx: text chat (uniform timeout, seconds)
 RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '45'))
 # Vision/OCR: split timeouts (httpx read = time to first byte + streaming body from RuTronix).

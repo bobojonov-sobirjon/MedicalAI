@@ -20,6 +20,10 @@ def gemini_configured() -> bool:
     return bool(getattr(settings, "GEMINI_API_KEY", None) and str(settings.GEMINI_API_KEY).strip())
 
 
+def gemini_fallback_enabled() -> bool:
+    return bool(getattr(settings, "USE_GEMINI_FALLBACK", False))
+
+
 def _model_name() -> str:
     return (getattr(settings, "GEMINI_MODEL", None) or "gemini-2.0-flash").strip()
 
@@ -230,30 +234,30 @@ def generate_json(system_instruction: str, user_text: str, *, temperature: float
     if rutronix_configured() and rutronix_generate_json:
         return rutronix_generate_json(system_instruction, user_text, temperature=temperature)
 
-    if not gemini_configured():
-        raise GeminiConfigError("GEMINI_API_KEY is not set")
+    if gemini_fallback_enabled() and gemini_configured():
+        import google.generativeai as genai
 
-    import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(_model_name(), system_instruction=system_instruction)
+        resp = model.generate_content(
+            user_text,
+            generation_config=genai.GenerationConfig(
+                temperature=temperature,
+                response_mime_type="application/json",
+            ),
+        )
+        raw = (resp.text or "").strip()
+        if not raw:
+            raise RuntimeError("Empty Gemini response")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = _extract_json_object(raw)
+        if not isinstance(data, dict):
+            raise RuntimeError("Gemini returned non-object JSON")
+        return data
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(_model_name(), system_instruction=system_instruction)
-    resp = model.generate_content(
-        user_text,
-        generation_config=genai.GenerationConfig(
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    )
-    raw = (resp.text or "").strip()
-    if not raw:
-        raise RuntimeError("Empty Gemini response")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = _extract_json_object(raw)
-    if not isinstance(data, dict):
-        raise RuntimeError("Gemini returned non-object JSON")
-    return data
+    raise GeminiConfigError("Настройте RUTRONIX_API_KEY (и RUTRONIX_MODEL для текста).")
 
 
 def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> str:
@@ -270,10 +274,11 @@ def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> 
         "Если это не медицинский документ — одна короткая фраза из системной инструкции."
     )
     try:
-        from .rutronix import complete_with_image_plain, rutronix_configured
+        from .rutronix import RuTronixConfigError, complete_with_image_plain, rutronix_configured
     except Exception:  # pragma: no cover
         complete_with_image_plain = None
         rutronix_configured = lambda: False  # type: ignore
+        RuTronixConfigError = RuntimeError  # type: ignore
 
     if complete_with_image_plain and rutronix_configured():
         text = complete_with_image_plain(
@@ -285,18 +290,18 @@ def transcribe_lab_image(image_bytes: bytes, _mime_type: str = "image/jpeg") -> 
         )
         return normalize_lab_ocr_plain_text(text)
 
-    if not gemini_configured():
-        raise GeminiConfigError("Настройте RUTRONIX_API_KEY (OCR) или GEMINI_API_KEY.")
+    if gemini_fallback_enabled() and gemini_configured():
+        import google.generativeai as genai
 
-    import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(_model_name(), system_instruction=system)
+        pil = Image.open(BytesIO(image_bytes))
+        if pil.mode not in ("RGB", "RGBA"):
+            pil = pil.convert("RGB")
+        resp = model.generate_content([prompt, pil], generation_config=genai.GenerationConfig(temperature=0.1))
+        return normalize_lab_ocr_plain_text((resp.text or "").strip())
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(_model_name(), system_instruction=system)
-    pil = Image.open(BytesIO(image_bytes))
-    if pil.mode not in ("RGB", "RGBA"):
-        pil = pil.convert("RGB")
-    resp = model.generate_content([prompt, pil], generation_config=genai.GenerationConfig(temperature=0.1))
-    return normalize_lab_ocr_plain_text((resp.text or "").strip())
+    raise GeminiConfigError("Настройте RUTRONIX_API_KEY и RUTRONIX_VISION_MODEL для OCR.")
 
 
 _DRUG_VISION_SYSTEM = (
@@ -339,7 +344,7 @@ def _complete_drug_vision_plain(
         except (RuTronixUpstreamError, RuTronixPaymentRequired) as exc:
             rutronix_failed = exc
 
-    if gemini_configured():
+    if gemini_fallback_enabled() and gemini_configured():
         try:
             return _gemini_vision_plain(
                 system_instruction=system_instruction,
@@ -354,7 +359,7 @@ def _complete_drug_vision_plain(
     if rutronix_failed is not None:
         raise rutronix_failed
 
-    raise GeminiConfigError("Настройте RUTRONIX_API_KEY (распознавание) или GEMINI_API_KEY.")
+    raise GeminiConfigError("Настройте RUTRONIX_API_KEY и RUTRONIX_VISION_MODEL для распознавания по фото.")
 
 
 def _gemini_vision_plain(

@@ -326,9 +326,7 @@ class AnalysisOcrFormView(APIView):
                 text = format_lab_ocr_for_client(transcribe_lab_image(image_raw, mime))
             except (GeminiConfigError, RuTronixConfigError):
                 return Response(
-                    {
-                        "detail": "Не настроен ключ ИИ для OCR: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."
-                    },
+                    {"detail": "Не настроен RuTronix для OCR: RUTRONIX_API_KEY и RUTRONIX_VISION_MODEL."},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
             except httpx.TimeoutException:

@@ -218,7 +218,7 @@ class CabinetRecognizeView(APIView):
             return Response({"mode": "single", **payload})
         except (GeminiConfigError, RuTronixConfigError):
             return Response(
-                {"detail": "Не настроен ключ ИИ: задайте RUTRONIX_API_KEY (рекомендуется) или GEMINI_API_KEY."},
+                {"detail": "Не настроен RuTronix: задайте RUTRONIX_API_KEY и RUTRONIX_VISION_MODEL в .env."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except RuTronixUnauthorized:
@@ -228,32 +228,22 @@ class CabinetRecognizeView(APIView):
             )
         except RuTronixPaymentRequired:
             return Response(
-                {"detail": "Недостаточно баланса RuTronix. Пополните счёт или задайте GEMINI_API_KEY как запасной вариант."},
+                {"detail": "Недостаточно баланса RuTronix. Пополните счёт в личном кабинете RuTronix."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except (RuTronixUpstreamError, httpx.HTTPStatusError) as exc:
             return Response(
                 {
                     "detail": (
-                        "Сервис распознавания RuTronix временно недоступен. "
-                        "Проверьте RUTRONIX_API_KEY и баланс на production."
+                        "RuTronix временно недоступен. Проверьте RUTRONIX_VISION_MODEL "
+                        "(модель с поддержкой фото, не one-perfect-answer), ключ и баланс."
                     ),
                     "error": str(exc),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         except GeminiUnavailableError as exc:
-            return Response(
-                {
-                    "detail": str(exc),
-                    "hint": (
-                        "Локально Gemini может работать с вашего ПК, но на сервере 85.198.101.179 "
-                        "Google блокирует регион. Добавьте рабочий RUTRONIX_API_KEY в /var/www/MedicalAI/.env "
-                        "и выполните: systemctl restart medical"
-                    ),
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except httpx.TimeoutException:
             return Response(
                 {

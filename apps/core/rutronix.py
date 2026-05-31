@@ -40,6 +40,17 @@ def _model_name() -> str:
     return (getattr(settings, "RUTRONIX_MODEL", None) or "one-perfect-answer").strip()
 
 
+def _vision_model_name() -> str:
+    """RuTronix model for image+text (OCR, drug photo). Must support vision."""
+    name = (getattr(settings, "RUTRONIX_VISION_MODEL", None) or "").strip()
+    if not name:
+        raise RuTronixConfigError(
+            "Задайте RUTRONIX_VISION_MODEL в .env — модель RuTronix с поддержкой фото "
+            "(one-perfect-answer только для текста)."
+        )
+    return name
+
+
 def _http_timeout_chat_s() -> float:
     return float(getattr(settings, "RUTRONIX_CHAT_TIMEOUT_S", 45.0))
 
@@ -156,8 +167,11 @@ def chat_completions(
             raise RuTronixPaymentRequired("RuTronix balance is insufficient (402)")
         if r.status_code >= 500:
             detail = (r.text or "")[:300].strip()
+            model_hint = payload.get("model", "")
             raise RuTronixUpstreamError(
-                f"RuTronix server error ({r.status_code})" + (f": {detail}" if detail else ""),
+                f"RuTronix server error ({r.status_code})"
+                + (f", model={model_hint}" if model_hint else "")
+                + (f": {detail}" if detail else ""),
                 status_code=r.status_code,
             )
         r.raise_for_status()
@@ -247,6 +261,7 @@ def complete_with_image_plain(
 
     resp = chat_completions(
         messages=messages,
+        model=_vision_model_name(),
         temperature=temperature,
         max_completion_tokens=max_completion_tokens,
         timeout=_vision_httpx_timeout(),
