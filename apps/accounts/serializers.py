@@ -82,6 +82,9 @@ class RegisterSerializer(serializers.Serializer):
             )
         user.set_password(password)
         user.save(update_fields=["password"])
+        from apps.billing.services import grant_welcome_trial
+
+        grant_welcome_trial(user)
         return user
 
 

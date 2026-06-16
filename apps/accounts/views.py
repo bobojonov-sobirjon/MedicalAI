@@ -255,6 +255,9 @@ class SocialLoginView(APIView):
                     )
                     user.set_unusable_password()
                     user.save(update_fields=["password"])
+                    from apps.billing.services import grant_welcome_trial
+
+                    grant_welcome_trial(user)
 
                 SocialAccount.objects.create(
                     user=user, provider=profile.provider, provider_user_id=profile.provider_user_id

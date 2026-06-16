@@ -28,6 +28,7 @@ urlpatterns += [
     path("api/", include("apps.assistant.urls")),
     path("api/", include("apps.cabinet.urls")),
     path("api/", include("apps.medic.urls")),
+    path("api/", include("apps.billing.urls")),
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

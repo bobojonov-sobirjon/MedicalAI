@@ -36,6 +36,7 @@ LOCAL_APPS = [
     'apps.assistant',
     'apps.cabinet',
     'apps.medic',
+    'apps.billing',
 ]
 
 INSTALLED_APPS = [
@@ -121,6 +122,12 @@ JAZZMIN_SETTINGS = {
         "medic.searchquerylog",
         "medic.auditlogentry",
         "medic.apierrorlog",
+        # ——— 07. Оплата ———
+        "billing",
+        "billing.tariffplan",
+        "billing.userbillingprofile",
+        "billing.usersubscription",
+        "billing.payment",
     ],
     "icons": {
         "accounts.customuser": "fas fa-users",
@@ -152,6 +159,10 @@ JAZZMIN_SETTINGS = {
         "medic.auditlogentry": "fas fa-clipboard-list",
         "medic.apierrorlog": "fas fa-exclamation-triangle",
         "medic.searchquerylog": "fas fa-search",
+        "billing.tariffplan": "fas fa-tags",
+        "billing.usersubscription": "fas fa-id-card",
+        "billing.payment": "fas fa-credit-card",
+        "billing.userbillingprofile": "fas fa-wallet",
     },
     "default_icon_parents": "fas fa-chevron-circle-right",
     "default_icon_children": "fas fa-circle",
@@ -493,6 +504,23 @@ RUTRONIX_VISION_JPEG_QUALITY = int(os.getenv('RUTRONIX_VISION_JPEG_QUALITY', '82
 
 PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
 FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))
+SUBSCRIPTION_EXPIRY_WARNING_DAYS = os.getenv('SUBSCRIPTION_EXPIRY_WARNING_DAYS', '7,3,1')
+ENABLE_SUBSCRIPTION_SCHEDULER = os.getenv('ENABLE_SUBSCRIPTION_SCHEDULER', 'true').strip()
+
+# Robokassa (ТЗ §4.2)
+ROBOKASSA_MERCHANT_LOGIN = os.getenv('ROBOKASSA_MERCHANT_LOGIN', 'MedicAi').strip()
+ROBOKASSA_PASSWORD1 = os.getenv('ROBOKASSA_PASSWORD1', '').strip()
+ROBOKASSA_PASSWORD2 = os.getenv('ROBOKASSA_PASSWORD2', '').strip()
+ROBOKASSA_TEST_MODE = os.getenv('ROBOKASSA_TEST_MODE', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+ROBOKASSA_PAYMENT_URL = os.getenv(
+    'ROBOKASSA_PAYMENT_URL',
+    'https://auth.robokassa.ru/Merchant/Index.aspx',
+).strip()
+ROBOKASSA_SUCCESS_URL = os.getenv('ROBOKASSA_SUCCESS_URL', '').strip()
+ROBOKASSA_FAIL_URL = os.getenv('ROBOKASSA_FAIL_URL', '').strip()
+ROBOKASSA_APPEND_REDIRECT_URLS = os.getenv('ROBOKASSA_APPEND_REDIRECT_URLS', 'false').strip().lower() in (
+    '1', 'true', 'yes', 'on',
+)
 
 # In-process scheduler for reminder notifications (dev / single instance)
 ENABLE_REMINDER_SCHEDULER = os.getenv('ENABLE_REMINDER_SCHEDULER', 'true').strip()
