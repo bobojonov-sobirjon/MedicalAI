@@ -73,7 +73,7 @@ class SymptomSearchView(APIView):
         q = (request.query_params.get("q") or "").strip()
         qs = Symptom.objects.all().order_by("name")
         if q:
-            qs = qs.filter(name__icontains=q)[:40]
+            qs = qs.filter(Q(name__icontains=q) | Q(aliases__icontains=q))[:40]
         else:
             qs = qs[:200]
         return Response(SymptomSerializer(qs, many=True).data)
