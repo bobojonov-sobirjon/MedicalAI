@@ -473,6 +473,14 @@ SPECTACULAR_SETTINGS = {
 PASSWORD_RESET_CODE_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_CODE_TTL_MINUTES', '15'))
 PASSWORD_RESET_SESSION_TTL_MINUTES = int(os.getenv('PASSWORD_RESET_SESSION_TTL_MINUTES', '15'))
 
+# Demo account for App Store / Google Play review (fixed login, password, OTP)
+DEMO_ACCOUNT_ENABLED = os.getenv('DEMO_ACCOUNT_ENABLED', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+DEMO_ACCOUNT_EMAIL = os.getenv('DEMO_ACCOUNT_EMAIL', 'demo@medic-ai.ru').strip().lower()
+DEMO_ACCOUNT_USERNAME = os.getenv('DEMO_ACCOUNT_USERNAME', 'demo').strip()
+DEMO_ACCOUNT_PASSWORD = os.getenv('DEMO_ACCOUNT_PASSWORD', 'Demo1234')
+DEMO_ACCOUNT_PHONE = os.getenv('DEMO_ACCOUNT_PHONE', '+79001234567').strip()
+DEMO_ACCOUNT_OTP = os.getenv('DEMO_ACCOUNT_OTP', '123456').strip()
+
 # Google Gemini (Stage 2: assistant + OCR)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash').strip()

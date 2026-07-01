@@ -28,6 +28,13 @@ from .serializers import (
 from .services import SocialAuthService
 from .services import FirebaseAuthService
 from .mail import send_password_reset_email
+from .demo import (
+    demo_credentials_public,
+    ensure_demo_password_reset_code,
+    is_demo_otp,
+    is_demo_user,
+    restore_demo_password_if_needed,
+)
 from .reset_session import create_reset_session_token, parse_reset_session_token
 
 
@@ -103,13 +110,47 @@ class LoginView(APIView):
                 },
             )
         },
-        examples=[OpenApiExample("Login", value={"identifier": "user@example.com", "password": "secret123"})],
+        examples=[OpenApiExample("Login", value={"identifier": "demo@medic-ai.ru", "password": "Demo1234"})],
     )
     def post(self, request):
         s = LoginSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         user = s.validated_data["user"]
         return Response({"user": UserMeSerializer(user).data, "tokens": _tokens_for_user(user)})
+
+
+class DemoCredentialsView(APIView):
+    """Public demo login hints for App Store / Google Play reviewers."""
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["Авторизация"],
+        summary="Демо-аккаунт (App Store / Google Play)",
+        description=(
+            "Возвращает фиксированные учётные данные для проверки приложения модераторами. "
+            "Доступно только при `DEMO_ACCOUNT_ENABLED=true` на сервере."
+        ),
+        responses=inline_serializer(
+            name="DemoCredentialsResponse",
+            fields={
+                "enabled": serializers.BooleanField(),
+                "identifier": serializers.CharField(),
+                "username": serializers.CharField(),
+                "email": serializers.EmailField(),
+                "phone_number": serializers.CharField(),
+                "password": serializers.CharField(),
+                "otp_code": serializers.CharField(),
+                "login_hint": serializers.CharField(),
+                "forgot_password_hint": serializers.CharField(),
+            },
+        ),
+    )
+    def get(self, request):
+        creds = demo_credentials_public()
+        if not creds["enabled"]:
+            return Response({"enabled": False, "detail": "Демо-аккаунт отключён на этом сервере."})
+        return Response(creds)
 
 
 class RefreshTokenView(APIView):
@@ -281,6 +322,12 @@ class PasswordChangeView(APIView):
         examples=[OpenApiExample("Change password", value={"old_password": "oldsecret", "new_password": "newsecret123"})],
     )
     def post(self, request):
+        if is_demo_user(request.user):
+            restore_demo_password_if_needed(request.user)
+            return Response(
+                {"detail": "Демо-аккаунт: пароль фиксированный и не может быть изменён."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         s = PasswordChangeSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         user = request.user
@@ -310,6 +357,9 @@ class ForgotPasswordRequestView(APIView):
         user = CustomUser.objects.filter(email__iexact=email).first()
         ok_msg = {"detail": "Если аккаунт существует, код подтверждения отправлен на email."}
         if not user or not user.is_active:
+            return Response(ok_msg)
+        if is_demo_user(user):
+            ensure_demo_password_reset_code(user)
             return Response(ok_msg)
         try:
             code = issue_password_reset_code(user)
@@ -353,6 +403,17 @@ class ForgotPasswordVerifyView(APIView):
         user = CustomUser.objects.filter(email__iexact=email).first()
         if not user or not user.is_active:
             return Response({"detail": "Неверный или просроченный код."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_demo_user(user) and is_demo_otp(code):
+            ensure_demo_password_reset_code(user)
+            reset_token = create_reset_session_token(user.pk)
+            return Response(
+                {
+                    "detail": "Код подтверждён. Отправьте reset_token и new_password на /api/auth/password/forgot/reset/.",
+                    "reset_token": reset_token,
+                }
+            )
+
         prc = (
             PasswordResetCode.objects.filter(user=user, used=False, expires_at__gte=timezone.now())
             .order_by("-created_at")
@@ -412,6 +473,17 @@ class ForgotPasswordResetView(APIView):
             user = CustomUser.objects.get(pk=uid, is_active=True)
         except CustomUser.DoesNotExist:
             return Response({"detail": "Неверный или просроченный reset_token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_demo_user(user):
+            restore_demo_password_if_needed(user)
+            return Response(
+                {
+                    "detail": "Демо-аккаунт: пароль остаётся прежним. Вход выполнен.",
+                    "user": UserMeSerializer(user).data,
+                    "tokens": _tokens_for_user(user),
+                }
+            )
+
         user.set_password(new_password)
         user.save(update_fields=["password"])
         return Response(

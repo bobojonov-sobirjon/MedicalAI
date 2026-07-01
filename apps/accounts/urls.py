@@ -10,6 +10,7 @@ from .views import (
     ForgotPasswordRequestView,
     ForgotPasswordVerifyView,
     ForgotPasswordResetView,
+    DemoCredentialsView,
 )
 from .profile_views import ProfileDetailView, ProfileListView
 
@@ -17,6 +18,7 @@ from .profile_views import ProfileDetailView, ProfileListView
 urlpatterns = [
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),
+    path("auth/demo/", DemoCredentialsView.as_view(), name="auth-demo"),
     path("auth/refresh/", RefreshTokenView.as_view(), name="auth-refresh"),
     path("auth/password/forgot/request/", ForgotPasswordRequestView.as_view(), name="auth-password-forgot-request"),
     path("auth/password/forgot/verify/", ForgotPasswordVerifyView.as_view(), name="auth-password-forgot-verify"),
