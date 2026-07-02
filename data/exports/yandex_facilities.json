@@ -1,0 +1,14 @@
+{
+  "source": "yandex_maps",
+  "meta": {
+    "cities_processed": 1,
+    "api_requests": 351,
+    "pharmacies": 0,
+    "hospitals": 0,
+    "completed_cities": [
+      "Москва"
+    ]
+  },
+  "count": 0,
+  "facilities": []
+}

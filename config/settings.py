@@ -481,6 +481,13 @@ DEMO_ACCOUNT_PASSWORD = os.getenv('DEMO_ACCOUNT_PASSWORD', 'Demo1234')
 DEMO_ACCOUNT_PHONE = os.getenv('DEMO_ACCOUNT_PHONE', '+79001234567').strip()
 DEMO_ACCOUNT_OTP = os.getenv('DEMO_ACCOUNT_OTP', '123456').strip()
 
+# Yandex Maps API (ТЗ §5.8 — aptekalar va bolnitsalar)
+YANDEX_MAPS_API_KEY = os.getenv('YANDEX_MAPS_API_KEY', '').strip()
+YANDEX_GEOCODER_API_KEY = os.getenv('YANDEX_GEOCODER_API_KEY', YANDEX_MAPS_API_KEY).strip()
+FACILITY_IMAGE_STATIC_MAP_FALLBACK = os.getenv('FACILITY_IMAGE_STATIC_MAP_FALLBACK', 'true').lower() in (
+    '1', 'true', 'yes',
+)
+
 # Google Gemini (Stage 2: assistant + OCR)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash').strip()
