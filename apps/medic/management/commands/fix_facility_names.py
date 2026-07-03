@@ -22,7 +22,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--json", default="data/exports/osm_facilities.json")
         parser.add_argument("--dry-run", action="store_true")
-        parser.add_argument("--only-weak", action="store_true", default=True)
+        parser.add_argument("--only-weak", action="store_true", default=False)
         parser.add_argument("--deactivate-unfixable", action="store_true")
 
     def handle(self, *args, **options):
@@ -59,6 +59,8 @@ class Command(BaseCommand):
                     "name": fac.name,
                     "city_name": fac.city.name if fac.city_id else "",
                     "address": fac.address,
+                    "latitude": fac.latitude,
+                    "longitude": fac.longitude,
                     "external_source": fac.external_source,
                     "external_id": fac.external_id,
                 }

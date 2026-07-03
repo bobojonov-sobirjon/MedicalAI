@@ -136,6 +136,8 @@ def build_fallback_facility_name(
     kind: str,
     city_name: str = "",
     address: str = "",
+    latitude=None,
+    longitude=None,
 ) -> str:
     kind_label = "Аптека" if kind == "pharmacy" else "Медучреждение"
     if kind == "hospital":
@@ -148,6 +150,11 @@ def build_fallback_facility_name(
         return f"{kind_label} — {addr}, {city}"[:255]
     if addr:
         return f"{kind_label} — {addr}"[:255]
+    if latitude is not None and longitude is not None:
+        try:
+            return f"{kind_label} — {city} ({float(latitude):.5f}, {float(longitude):.5f})"[:255]
+        except (TypeError, ValueError):
+            pass
     if city:
         return f"{kind_label} — {city}"[:255]
     return ""
@@ -174,4 +181,6 @@ def pick_facility_name_from_row(row: dict, *, kind: str = "") -> str:
         kind=kind,
         city_name=str(row.get("city_name") or row.get("city") or ""),
         address=str(row.get("address") or ""),
+        latitude=row.get("latitude"),
+        longitude=row.get("longitude"),
     )

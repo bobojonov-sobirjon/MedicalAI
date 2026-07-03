@@ -251,6 +251,10 @@ def _element_to_facility(
     if kind is None or kind not in kinds:
         return None
 
+    lat, lon = _element_coords(element)
+    if lat is None or lon is None:
+        return None
+
     name = _pick_name(tags)
     if not name:
         from .facility_name_normalize import build_fallback_facility_name
@@ -261,12 +265,10 @@ def _element_to_facility(
             kind=kind_str,
             city_name=city_name,
             address=_build_address(tags),
+            latitude=lat,
+            longitude=lon,
         )
     if not name:
-        return None
-
-    lat, lon = _element_coords(element)
-    if lat is None or lon is None:
         return None
 
     osm_type = element.get("type", "node")
