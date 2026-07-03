@@ -18,6 +18,7 @@ import requests
 from .facilities_json import load_facilities_json, save_facilities_json
 
 from .facility_image_resolver import OSM_IMAGE_KEYS
+from .facility_name_normalize import NAME_TAG_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -200,11 +201,9 @@ def _city_name(tags: dict[str, str], region_fallback: str) -> str:
 
 
 def _pick_name(tags: dict[str, str]) -> str:
-    for key in ("name", "brand", "operator", "name:ru", "official_name"):
-        value = (tags.get(key) or "").strip()
-        if value:
-            return value
-    return ""
+    from .facility_name_normalize import pick_facility_name_from_osm_tags
+
+    return pick_facility_name_from_osm_tags(tags)
 
 
 def _pick_phone(tags: dict[str, str]) -> str:
@@ -254,6 +253,16 @@ def _element_to_facility(
 
     name = _pick_name(tags)
     if not name:
+        from .facility_name_normalize import build_fallback_facility_name
+
+        kind_str = "pharmacy" if kind == "pharmacy" else "hospital"
+        city_name = _city_name(tags, region_name)
+        name = build_fallback_facility_name(
+            kind=kind_str,
+            city_name=city_name,
+            address=_build_address(tags),
+        )
+    if not name:
         return None
 
     lat, lon = _element_coords(element)
@@ -282,6 +291,11 @@ def _element_to_facility(
         or key == "wikimedia_commons"
         or key.startswith("image")
     }
+    name_tags = {
+        key: value
+        for key, value in tags.items()
+        if key in NAME_TAG_KEYS and (value or "").strip()
+    }
 
     row: dict[str, Any] = {
         "kind": kind,
@@ -301,6 +315,8 @@ def _element_to_facility(
     }
     if image_tags:
         row["osm_tags"] = image_tags
+    if name_tags:
+        row["osm_name_tags"] = name_tags
     if wikidata_id:
         row["wikidata_id"] = wikidata_id
     if brand_wikidata_id:
