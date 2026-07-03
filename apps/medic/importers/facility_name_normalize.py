@@ -42,6 +42,11 @@ AUTO_KIND_PREFIX_RE = re.compile(
     r"^(?:аптека|больница|медучреждение|аптечный пункт)\s*—\s*",
     re.IGNORECASE,
 )
+PHARMACY_WORD_RE = re.compile(r"(?:\bаптека\b|\bapteka\b)", re.IGNORECASE)
+HOSPITAL_WORD_RE = re.compile(
+    r"(?:\bбольница\b|\bполиклиника\b|\bгоспиталь\b|\bклиника\b|\bhospital\b|\bclinic\b)",
+    re.IGNORECASE,
+)
 
 
 def clean_facility_label(value: str) -> str:
@@ -189,22 +194,52 @@ def cleanup_facility_display_name(name: str) -> str:
     return label[:255]
 
 
+def ensure_pharmacy_prefix(name: str) -> str:
+    """'36,6' -> 'Аптека 36,6'; 'Аптека 36,6' o'zgarmaydi."""
+    label = clean_facility_label(name)
+    if not label:
+        return ""
+    if PHARMACY_WORD_RE.search(label):
+        return label[:255]
+    return f"Аптека {label}"[:255]
+
+
+def ensure_hospital_prefix(name: str) -> str:
+    label = clean_facility_label(name)
+    if not label:
+        return ""
+    if HOSPITAL_WORD_RE.search(label):
+        return label[:255]
+    return f"Больница {label}"[:255]
+
+
+def finalize_facility_display_name(name: str, *, kind: str) -> str:
+    label = cleanup_facility_display_name(name)
+    if not label:
+        return ""
+    if kind == "pharmacy":
+        return ensure_pharmacy_prefix(label)
+    if kind == "hospital":
+        return ensure_hospital_prefix(label)
+    return label[:255]
+
+
 def pick_facility_name_from_row(row: dict, *, kind: str = "") -> str:
     kind = kind or str(row.get("kind") or "")
     osm_tags = row.get("osm_name_tags") or row.get("osm_tags") or {}
     if isinstance(osm_tags, dict) and osm_tags:
         name = pick_facility_name_from_osm_tags(osm_tags, kind=kind)
         if name:
-            return cleanup_facility_display_name(name)
+            return finalize_facility_display_name(name, kind=kind)
 
     for key in ("brand", "operator", "official_name", "name"):
         value = clean_facility_label(str(row.get(key) or ""))
         if value and not is_weak_facility_name(value):
-            return cleanup_facility_display_name(value)
+            return finalize_facility_display_name(value, kind=kind)
 
     current = clean_facility_label(str(row.get("name") or ""))
     if current and not is_weak_facility_name(current):
-        return cleanup_facility_display_name(current)
+        return finalize_facility_display_name(current, kind=kind)
 
     raw_for_fallback = current if current else clean_facility_label(str(row.get("name") or ""))
     fallback = build_fallback_facility_name(
@@ -215,4 +250,4 @@ def pick_facility_name_from_row(row: dict, *, kind: str = "") -> str:
         longitude=row.get("longitude"),
         base_name=raw_for_fallback,
     )
-    return cleanup_facility_display_name(fallback)
+    return finalize_facility_display_name(fallback, kind=kind)
