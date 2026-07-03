@@ -38,6 +38,12 @@ GENERIC_PREFIX_RE = re.compile(
 )
 
 
+AUTO_KIND_PREFIX_RE = re.compile(
+    r"^(?:аптека|больница|медучреждение|аптечный пункт)\s*—\s*",
+    re.IGNORECASE,
+)
+
+
 def clean_facility_label(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
 
@@ -50,6 +56,9 @@ def is_weak_facility_name(name: str) -> bool:
         return True
     if WEAK_NAME_RE.match(label):
         return True
+    # "21 Плюс", "03 Life" — raqam + brend, qoldiramiz
+    if re.match(r"^\d{1,4}\s*\+?\s*[A-Za-zА-Яа-яЁё]", label):
+        return False
     # "Аптека 5+" — faqat raqam/belgi qolgan
     stripped = GENERIC_PREFIX_RE.sub("", label).strip(" .,-№#+")
     if not stripped:
@@ -138,26 +147,46 @@ def build_fallback_facility_name(
     address: str = "",
     latitude=None,
     longitude=None,
+    base_name: str = "",
 ) -> str:
-    kind_label = "Аптека" if kind == "pharmacy" else "Медучреждение"
-    if kind == "hospital":
-        kind_label = "Больница"
+    """Manzil/shahar/koordinata — 'Аптека —' prefiksiz (ilovada xunuk ko'rinmasin)."""
+    base = clean_facility_label(base_name)
+    if base and not is_weak_facility_name(base):
+        return base[:255]
 
     city = clean_facility_label(city_name)
     addr = clean_facility_label(address)
 
     if addr and city and city.lower() not in addr.lower():
-        return f"{kind_label} — {addr}, {city}"[:255]
+        return f"{addr}, {city}"[:255]
     if addr:
-        return f"{kind_label} — {addr}"[:255]
+        return addr[:255]
     if latitude is not None and longitude is not None:
         try:
-            return f"{kind_label} — {city} ({float(latitude):.5f}, {float(longitude):.5f})"[:255]
+            coords = f"{float(latitude):.5f}, {float(longitude):.5f}"
+            if city:
+                return f"{city} ({coords})"[:255]
+            return coords[:255]
         except (TypeError, ValueError):
             pass
     if city:
-        return f"{kind_label} — {city}"[:255]
+        return city[:255]
     return ""
+
+
+def cleanup_facility_display_name(name: str) -> str:
+    """'Аптека — Апрель' -> 'Апрель'; prefiks faqat ortiqcha bo'lsa olib tashlanadi."""
+    label = clean_facility_label(name)
+    if not label:
+        return ""
+    stripped = AUTO_KIND_PREFIX_RE.sub("", label).strip()
+    if stripped and stripped != label:
+        if not is_weak_facility_name(stripped):
+            return stripped[:255]
+        # "Аптека — Чувашская Республика" -> "Чувашская Республика"
+        if not re.match(r"^\d", stripped):
+            return stripped[:255]
+    return label[:255]
 
 
 def pick_facility_name_from_row(row: dict, *, kind: str = "") -> str:
@@ -166,21 +195,24 @@ def pick_facility_name_from_row(row: dict, *, kind: str = "") -> str:
     if isinstance(osm_tags, dict) and osm_tags:
         name = pick_facility_name_from_osm_tags(osm_tags, kind=kind)
         if name:
-            return name
+            return cleanup_facility_display_name(name)
 
     for key in ("brand", "operator", "official_name", "name"):
         value = clean_facility_label(str(row.get(key) or ""))
         if value and not is_weak_facility_name(value):
-            return value[:255]
+            return cleanup_facility_display_name(value)
 
     current = clean_facility_label(str(row.get("name") or ""))
     if current and not is_weak_facility_name(current):
-        return current[:255]
+        return cleanup_facility_display_name(current)
 
-    return build_fallback_facility_name(
+    raw_for_fallback = current if current else clean_facility_label(str(row.get("name") or ""))
+    fallback = build_fallback_facility_name(
         kind=kind,
         city_name=str(row.get("city_name") or row.get("city") or ""),
         address=str(row.get("address") or ""),
         latitude=row.get("latitude"),
         longitude=row.get("longitude"),
+        base_name=raw_for_fallback,
     )
+    return cleanup_facility_display_name(fallback)

@@ -257,17 +257,23 @@ def _element_to_facility(
 
     name = _pick_name(tags)
     if not name:
-        from .facility_name_normalize import build_fallback_facility_name
+        from .facility_name_normalize import build_fallback_facility_name, cleanup_facility_display_name
 
         kind_str = "pharmacy" if kind == "pharmacy" else "hospital"
         city_name = _city_name(tags, region_name)
-        name = build_fallback_facility_name(
-            kind=kind_str,
-            city_name=city_name,
-            address=_build_address(tags),
-            latitude=lat,
-            longitude=lon,
+        name = cleanup_facility_display_name(
+            build_fallback_facility_name(
+                kind=kind_str,
+                city_name=city_name,
+                address=_build_address(tags),
+                latitude=lat,
+                longitude=lon,
+            )
         )
+    if name:
+        from .facility_name_normalize import cleanup_facility_display_name
+
+        name = cleanup_facility_display_name(name)
     if not name:
         return None
 

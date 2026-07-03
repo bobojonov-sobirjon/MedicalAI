@@ -10,6 +10,7 @@ from django.db import transaction
 
 from apps.medic.importers.facilities_json import load_facilities_json
 from apps.medic.importers.facility_name_normalize import (
+    cleanup_facility_display_name,
     is_weak_facility_name,
     pick_facility_name_from_row,
 )
@@ -23,6 +24,12 @@ class Command(BaseCommand):
         parser.add_argument("--json", default="data/exports/osm_facilities.json")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--only-weak", action="store_true", default=False)
+        parser.add_argument(
+            "--strip-prefix",
+            action="store_true",
+            default=True,
+            help="Remove ugly 'Аптека —' from existing names",
+        )
         parser.add_argument("--deactivate-unfixable", action="store_true")
 
     def handle(self, *args, **options):
@@ -42,7 +49,7 @@ class Command(BaseCommand):
         self.stdout.write(f"JSON: {len(by_external)} yozuv")
 
         qs = MedicalFacility.objects.filter(external_source="osm").select_related("city")
-        if options["only_weak"]:
+        if options["only_weak"] and not options["strip_prefix"]:
             ids = [f.id for f in qs if is_weak_facility_name(f.name)]
             qs = MedicalFacility.objects.filter(id__in=ids).select_related("city")
         self.stdout.write(f"Tekshiriladi: {qs.count()} muassasa")
@@ -65,6 +72,12 @@ class Command(BaseCommand):
                     "external_id": fac.external_id,
                 }
                 new_name = pick_facility_name_from_row(row, kind=fac.kind)
+                if options["strip_prefix"]:
+                    cleaned = cleanup_facility_display_name(fac.name)
+                    if cleaned and cleaned != fac.name and (
+                        not new_name or new_name == fac.name or is_weak_facility_name(new_name)
+                    ):
+                        new_name = cleaned
                 if not new_name or new_name == fac.name:
                     if options["deactivate_unfixable"] and is_weak_facility_name(fac.name):
                         if not options["dry_run"]:
