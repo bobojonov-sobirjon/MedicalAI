@@ -8,7 +8,18 @@ from django.db import models
 class City(models.Model):
     """ТЗ §7.13: справочник городов для учреждений (в API сортировка А–Я)."""
 
+    class GeoLevel(models.TextChoices):
+        REGION = "region", "Область/регион"
+        CITY = "city", "Город"
+        DISTRICT = "district", "Район"
+
     name = models.CharField("Город", max_length=128, unique=True)
+    geo_level = models.CharField(
+        "Тип",
+        max_length=16,
+        choices=GeoLevel.choices,
+        default=GeoLevel.CITY,
+    )
     sort_order = models.PositiveIntegerField("Порядок", default=0)
 
     class Meta:
@@ -46,6 +57,13 @@ class MedicalFacility(models.Model):
         verbose_name_plural = "Мед. учреждения"
         indexes = [
             models.Index(fields=["kind", "city", "name"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("external_source", "external_id"),
+                condition=models.Q(external_source__gt="", external_id__gt=""),
+                name="uniq_facility_external_source_id",
+            ),
         ]
 
     def __str__(self) -> str:  # pragma: no cover

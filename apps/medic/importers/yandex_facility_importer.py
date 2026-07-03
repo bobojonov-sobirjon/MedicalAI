@@ -18,6 +18,7 @@ from django.db import transaction
 from apps.medic.models import MedicalFacility
 
 from .geo_importer import _get_or_create_city, _normalize_kind
+from .city_normalize import pick_city_name_for_facility_row
 from .facilities_json import load_facilities_json
 from .facility_image_resolver import resolve_facility_image_url
 
@@ -130,7 +131,10 @@ def _upsert_facility_row(
     stats: YandexImportStats,
 ) -> bool:
     kind = _normalize_kind(row.get("kind") or "")
-    city_name = (row.get("city_name") or row.get("city") or "").strip()
+    city_name = pick_city_name_for_facility_row(
+        row,
+        region_fallback=str(row.get("region_name") or ""),
+    )
     name = (row.get("name") or "").strip()
     external_source = (row.get("external_source") or "yandex").strip()
     external_id = str(row.get("external_id") or "").strip()

@@ -30,7 +30,8 @@ from .models import (
 
 @admin.register(City)
 class CityAdmin(admin.ModelAdmin):
-    list_display = ("name", "sort_order")
+    list_display = ("name", "geo_level", "sort_order")
+    list_filter = ("geo_level",)
     search_fields = ("name",)
 
 

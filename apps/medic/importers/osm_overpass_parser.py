@@ -194,11 +194,9 @@ def _build_address(tags: dict[str, str]) -> str:
 
 
 def _city_name(tags: dict[str, str], region_fallback: str) -> str:
-    for key in ("addr:city", "addr:town", "addr:village", "addr:suburb", "addr:place"):
-        value = (tags.get(key) or "").strip()
-        if value:
-            return value
-    return region_fallback
+    from .city_normalize import resolve_city_name_from_osm_tags
+
+    return resolve_city_name_from_osm_tags(tags, region_fallback=region_fallback)
 
 
 def _pick_name(tags: dict[str, str]) -> str:
@@ -270,6 +268,10 @@ def _element_to_facility(
     prefix = {"node": "n", "way": "w", "relation": "r"}.get(osm_type, "x")
     external_id = f"{prefix}{osm_id}"
 
+    city_name = _city_name(tags, region_name)
+    if not city_name:
+        return None
+
     image_url = _pick_image_url(tags)
     wikidata_id = (tags.get("wikidata") or "").strip()
     brand_wikidata_id = (tags.get("brand:wikidata") or "").strip()
@@ -284,7 +286,7 @@ def _element_to_facility(
     row: dict[str, Any] = {
         "kind": kind,
         "name": name[:255],
-        "city_name": _city_name(tags, region_name)[:128],
+        "city_name": city_name[:128],
         "address": _build_address(tags),
         "phone": _pick_phone(tags),
         "hours_text": (tags.get("opening_hours") or "")[:255],

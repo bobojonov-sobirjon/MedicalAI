@@ -12,6 +12,8 @@ from django.db import transaction
 from apps.core.csv_import import iter_csv_rows
 from apps.medic.models import City, MedicalFacility
 
+from .city_normalize import clean_city_label, infer_geo_level, is_blocked_city_name
+
 
 @dataclass
 class GeoImportResult:
@@ -42,16 +44,22 @@ def _normalize_kind(raw: str) -> str:
     return value
 
 
-def _get_or_create_city(name: str, *, dry_run: bool) -> City | None:
-    name = name.strip()
-    if not name:
+def _get_or_create_city(
+    name: str,
+    *,
+    dry_run: bool,
+    geo_level: str | None = None,
+) -> City | None:
+    name = clean_city_label(name)
+    if not name or is_blocked_city_name(name):
         return None
     existing = City.objects.filter(name__iexact=name).first()
     if existing:
         return existing
     if dry_run:
         return None
-    return City.objects.create(name=name)
+    level = geo_level or infer_geo_level(name)
+    return City.objects.create(name=name, geo_level=level)
 
 
 @transaction.atomic
@@ -77,7 +85,11 @@ def import_cities_csv(path: Path, *, dry_run: bool = False) -> GeoImportResult:
         if dry_run:
             result.cities_created += 1
             continue
-        City.objects.create(name=name, sort_order=sort_order)
+        City.objects.create(
+            name=name,
+            sort_order=sort_order,
+            geo_level=infer_geo_level(name),
+        )
         result.cities_created += 1
     if dry_run:
         transaction.set_rollback(True)

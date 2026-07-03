@@ -110,16 +110,29 @@ class CityListView(APIView):
         description="Используется для автодополнения города. Можно передать `q` для фильтра по подстроке.",
         parameters=[
             OpenApiParameter(name="q", type=str, required=False, description="Поиск по названию города"),
+            OpenApiParameter(
+                name="level",
+                type=str,
+                required=False,
+                description="region | city | district (по умолчанию city+region)",
+            ),
             OpenApiParameter(name="limit", type=int, required=False, description="Лимит (по умолчанию 200, максимум 500)"),
         ],
     )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
+        level = (request.query_params.get("level") or "").strip().lower()
         limit = min(int(request.query_params.get("limit") or 200), 500)
         rows = City.objects.all().order_by("name")
+        if level in {City.GeoLevel.REGION, City.GeoLevel.CITY, City.GeoLevel.DISTRICT}:
+            rows = rows.filter(geo_level=level)
+        else:
+            rows = rows.exclude(geo_level=City.GeoLevel.DISTRICT)
         if q:
             rows = rows.filter(name__icontains=q)
-        return Response([{"id": c.id, "name": c.name} for c in rows[:limit]])
+        return Response(
+            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in rows[:limit]]
+        )
 
 
 def _facility_image_url(request, obj: "MedicalFacility") -> str | None:
