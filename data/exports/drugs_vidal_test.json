@@ -1,0 +1,468 @@
+{
+  "entity": "drug",
+  "source": "vidal",
+  "meta": {
+    "pages_processed": 3,
+    "drugs_total": 57,
+    "details_fetched": 0
+  },
+  "count": 57,
+  "items": [
+    {
+      "name": "A Valkordis",
+      "description": "Источник: vidal.ru/drugs/a-valkordis",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "a-valkordis",
+      "source_url": "https://www.vidal.ru/drugs/a-valkordis"
+    },
+    {
+      "name": "Abacavir",
+      "description": "Источник: vidal.ru/drugs/abacavir",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir",
+      "source_url": "https://www.vidal.ru/drugs/abacavir"
+    },
+    {
+      "name": "Abacavir 1",
+      "description": "Источник: vidal.ru/drugs/abacavir-1",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-1",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-1"
+    },
+    {
+      "name": "Abacavir 10",
+      "description": "Источник: vidal.ru/drugs/abacavir-10",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-10",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-10"
+    },
+    {
+      "name": "Abacavir 11",
+      "description": "Источник: vidal.ru/drugs/abacavir-11",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-11",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-11"
+    },
+    {
+      "name": "Abacavir 13",
+      "description": "Источник: vidal.ru/drugs/abacavir-13",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-13",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-13"
+    },
+    {
+      "name": "Abacavir 15",
+      "description": "Источник: vidal.ru/drugs/abacavir-15",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-15",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-15"
+    },
+    {
+      "name": "Abacavir 16",
+      "description": "Источник: vidal.ru/drugs/abacavir-16",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-16",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-16"
+    },
+    {
+      "name": "Abacavir 17",
+      "description": "Источник: vidal.ru/drugs/abacavir-17",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-17",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-17"
+    },
+    {
+      "name": "Abacavir 2",
+      "description": "Источник: vidal.ru/drugs/abacavir-2",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-2",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-2"
+    },
+    {
+      "name": "Abacavir 3",
+      "description": "Источник: vidal.ru/drugs/abacavir-3",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-3",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-3"
+    },
+    {
+      "name": "Abacavir 4",
+      "description": "Источник: vidal.ru/drugs/abacavir-4",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-4",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-4"
+    },
+    {
+      "name": "Abacavir 5",
+      "description": "Источник: vidal.ru/drugs/abacavir-5",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-5",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-5"
+    },
+    {
+      "name": "Abacavir 6",
+      "description": "Источник: vidal.ru/drugs/abacavir-6",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-6",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-6"
+    },
+    {
+      "name": "Abacavir 7",
+      "description": "Источник: vidal.ru/drugs/abacavir-7",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-7",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-7"
+    },
+    {
+      "name": "Abacavir 8",
+      "description": "Источник: vidal.ru/drugs/abacavir-8",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-8",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-8"
+    },
+    {
+      "name": "Abacavir 9",
+      "description": "Источник: vidal.ru/drugs/abacavir-9",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-9",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-9"
+    },
+    {
+      "name": "Abacavir Advance",
+      "description": "Источник: vidal.ru/drugs/abacavir-advance",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-advance",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-advance"
+    },
+    {
+      "name": "Abacavir Kanon",
+      "description": "Источник: vidal.ru/drugs/abacavir-kanon",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-kanon",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-kanon"
+    },
+    {
+      "name": "Abacavir Lamivudine",
+      "description": "Источник: vidal.ru/drugs/abacavir-lamivudine",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-lamivudine",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-lamivudine"
+    },
+    {
+      "name": "Abacavir Lamivudine 2",
+      "description": "Источник: vidal.ru/drugs/abacavir-lamivudine-2",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-lamivudine-2",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-lamivudine-2"
+    },
+    {
+      "name": "Abacavir Lamivudine 3",
+      "description": "Источник: vidal.ru/drugs/abacavir-lamivudine-3",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-lamivudine-3",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-lamivudine-3"
+    },
+    {
+      "name": "Abacavir Lamivudine Sun",
+      "description": "Источник: vidal.ru/drugs/abacavir-lamivudine-sun",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-lamivudine-sun",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-lamivudine-sun"
+    },
+    {
+      "name": "Abacavir Zidovudine Lamivudine",
+      "description": "Источник: vidal.ru/drugs/abacavir-zidovudine-lamivudine",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abacavir-zidovudine-lamivudine",
+      "source_url": "https://www.vidal.ru/drugs/abacavir-zidovudine-lamivudine"
+    },
+    {
+      "name": "Abemaciclib Promomed",
+      "description": "Источник: vidal.ru/drugs/abemaciclib-promomed",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abemaciclib-promomed",
+      "source_url": "https://www.vidal.ru/drugs/abemaciclib-promomed"
+    },
+    {
+      "name": "Abilify Mentena",
+      "description": "Источник: vidal.ru/drugs/abilify-mentena",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abilify-mentena",
+      "source_url": "https://www.vidal.ru/drugs/abilify-mentena"
+    },
+    {
+      "name": "Abiraprost",
+      "description": "Источник: vidal.ru/drugs/abiraprost",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraprost",
+      "source_url": "https://www.vidal.ru/drugs/abiraprost"
+    },
+    {
+      "name": "Abirat",
+      "description": "Источник: vidal.ru/drugs/abirat",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abirat",
+      "source_url": "https://www.vidal.ru/drugs/abirat"
+    },
+    {
+      "name": "Abirateron Amedart",
+      "description": "Источник: vidal.ru/drugs/abirateron-amedart",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abirateron-amedart",
+      "source_url": "https://www.vidal.ru/drugs/abirateron-amedart"
+    },
+    {
+      "name": "Abiraterone",
+      "description": "Источник: vidal.ru/drugs/abiraterone",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone"
+    },
+    {
+      "name": "Abiraterone Af",
+      "description": "Источник: vidal.ru/drugs/abiraterone-af",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-af",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-af"
+    },
+    {
+      "name": "Abiraterone Canon",
+      "description": "Источник: vidal.ru/drugs/abiraterone-canon",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-canon",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-canon"
+    },
+    {
+      "name": "Abiraterone Nv",
+      "description": "Источник: vidal.ru/drugs/abiraterone-nv",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-nv",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-nv"
+    },
+    {
+      "name": "Abiraterone Promomed",
+      "description": "Источник: vidal.ru/drugs/abiraterone-promomed",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-promomed",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-promomed"
+    },
+    {
+      "name": "Abiraterone Sun",
+      "description": "Источник: vidal.ru/drugs/abiraterone-sun",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-sun",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-sun"
+    },
+    {
+      "name": "Abiraterone Tl",
+      "description": "Источник: vidal.ru/drugs/abiraterone-tl",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abiraterone-tl",
+      "source_url": "https://www.vidal.ru/drugs/abiraterone-tl"
+    },
+    {
+      "name": "Abitera",
+      "description": "Источник: vidal.ru/drugs/abitera",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "abitera",
+      "source_url": "https://www.vidal.ru/drugs/abitera"
+    },
+    {
+      "name": "Avene Cleanance",
+      "description": "Источник: vidal.ru/drugs/avene-cleanance",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-cleanance",
+      "source_url": "https://www.vidal.ru/drugs/avene-cleanance"
+    },
+    {
+      "name": "Avene Cleanance Comedomed",
+      "description": "Источник: vidal.ru/drugs/avene-cleanance-comedomed",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-cleanance-comedomed",
+      "source_url": "https://www.vidal.ru/drugs/avene-cleanance-comedomed"
+    },
+    {
+      "name": "Avene Cleanance Comedomed Peeling",
+      "description": "Источник: vidal.ru/drugs/avene-cleanance-comedomed-peeling",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-cleanance-comedomed-peeling",
+      "source_url": "https://www.vidal.ru/drugs/avene-cleanance-comedomed-peeling"
+    },
+    {
+      "name": "Avene Cleanance Hydra",
+      "description": "Источник: vidal.ru/drugs/avene-cleanance-hydra",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-cleanance-hydra",
+      "source_url": "https://www.vidal.ru/drugs/avene-cleanance-hydra"
+    },
+    {
+      "name": "Avene Cleanance Hydra 1",
+      "description": "Источник: vidal.ru/drugs/avene-cleanance-hydra-1",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-cleanance-hydra-1",
+      "source_url": "https://www.vidal.ru/drugs/avene-cleanance-hydra-1"
+    },
+    {
+      "name": "Avene Xeracalm A D",
+      "description": "Источник: vidal.ru/drugs/avene-xeracalm-a-d",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-xeracalm-a-d",
+      "source_url": "https://www.vidal.ru/drugs/avene-xeracalm-a-d"
+    },
+    {
+      "name": "Avene Xeracalm A D 1",
+      "description": "Источник: vidal.ru/drugs/avene-xeracalm-a-d-1",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-xeracalm-a-d-1",
+      "source_url": "https://www.vidal.ru/drugs/avene-xeracalm-a-d-1"
+    },
+    {
+      "name": "Avene Xeracalm A D 2",
+      "description": "Источник: vidal.ru/drugs/avene-xeracalm-a-d-2",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-xeracalm-a-d-2",
+      "source_url": "https://www.vidal.ru/drugs/avene-xeracalm-a-d-2"
+    },
+    {
+      "name": "Avene Xeracalm A D 3",
+      "description": "Источник: vidal.ru/drugs/avene-xeracalm-a-d-3",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avene-xeracalm-a-d-3",
+      "source_url": "https://www.vidal.ru/drugs/avene-xeracalm-a-d-3"
+    },
+    {
+      "name": "Avenium Pro",
+      "description": "Источник: vidal.ru/drugs/avenium-pro",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avenium-pro",
+      "source_url": "https://www.vidal.ru/drugs/avenium-pro"
+    },
+    {
+      "name": "Aviandr",
+      "description": "Источник: vidal.ru/drugs/aviandr",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "aviandr",
+      "source_url": "https://www.vidal.ru/drugs/aviandr"
+    },
+    {
+      "name": "Avifavir",
+      "description": "Источник: vidal.ru/drugs/avifavir",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avifavir",
+      "source_url": "https://www.vidal.ru/drugs/avifavir"
+    },
+    {
+      "name": "Avifavir Forte",
+      "description": "Источник: vidal.ru/drugs/avifavir-forte",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avifavir-forte",
+      "source_url": "https://www.vidal.ru/drugs/avifavir-forte"
+    },
+    {
+      "name": "Avinorm Travel",
+      "description": "Источник: vidal.ru/drugs/avinorm-travel",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avinorm-travel",
+      "source_url": "https://www.vidal.ru/drugs/avinorm-travel"
+    },
+    {
+      "name": "Avionko",
+      "description": "Источник: vidal.ru/drugs/avionko",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avionko",
+      "source_url": "https://www.vidal.ru/drugs/avionko"
+    },
+    {
+      "name": "Avonex",
+      "description": "Источник: vidal.ru/drugs/avonex",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avonex",
+      "source_url": "https://www.vidal.ru/drugs/avonex"
+    },
+    {
+      "name": "Avonex 1",
+      "description": "Источник: vidal.ru/drugs/avonex-1",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avonex-1",
+      "source_url": "https://www.vidal.ru/drugs/avonex-1"
+    },
+    {
+      "name": "Avoprost",
+      "description": "Источник: vidal.ru/drugs/avoprost",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avoprost",
+      "source_url": "https://www.vidal.ru/drugs/avoprost"
+    },
+    {
+      "name": "Avrora Cov Vaccine Based On Peptide Antigens For Prevention Of Covid 19",
+      "description": "Источник: vidal.ru/drugs/avrora-cov-vaccine-based-on-peptide-antigens-for-prevention-of-covid-19",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avrora-cov-vaccine-based-on-peptide-antigens-for-prevention-of-covid-19",
+      "source_url": "https://www.vidal.ru/drugs/avrora-cov-vaccine-based-on-peptide-antigens-for-prevention-of-covid-19"
+    },
+    {
+      "name": "Avvantacid",
+      "description": "Источник: vidal.ru/drugs/avvantacid",
+      "dosage": "",
+      "external_source": "vidal",
+      "external_id": "avvantacid",
+      "source_url": "https://www.vidal.ru/drugs/avvantacid"
+    }
+  ]
+}
