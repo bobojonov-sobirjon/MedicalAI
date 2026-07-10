@@ -41,7 +41,8 @@ def import_drugs_json(path: Path, *, dry_run: bool = False) -> CatalogImportResu
         name = row.get("name") or ""
         description = row.get("description") or ""
         dosage = row.get("dosage") or ""
-        status, _ = _upsert_drug(name, description, dosage, dry_run=dry_run)
+        instructions = row.get("instructions") or ""
+        status, _ = _upsert_drug(name, description, dosage, dry_run=dry_run, instructions=instructions)
         if status == "created":
             result.drugs_created += 1
         elif status == "updated":

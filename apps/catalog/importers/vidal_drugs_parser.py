@@ -101,6 +101,18 @@ def extract_drug_slugs_from_html(html: str) -> list[str]:
     return slugs
 
 
+def _extract_labeled_paragraph(html: str, label: str) -> str:
+    m = re.search(
+        rf">{re.escape(label)}<[\s\S]{{0,800}}?<p[^>]*>(.*?)</p>",
+        html,
+        re.I,
+    )
+    if not m:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", m.group(1))
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def parse_drug_detail(html: str, *, slug: str) -> dict[str, str]:
     name = _slug_to_title(slug)
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
@@ -111,17 +123,27 @@ def parse_drug_detail(html: str, *, slug: str) -> dict[str, str]:
             name = name.split("(", 1)[0].strip()
 
     description = ""
-    dosage = ""
-    for label, field in (("Показания к применению", "description"), ("Фармакологическое действие", "description")):
-        m = re.search(
-            rf">{label}<[\s\S]{{0,600}}?<p[^>]*>(.*?)</p>",
-            html,
-            re.I,
-        )
-        if m and field == "description" and not description:
-            text = re.sub(r"<[^>]+>", " ", m.group(1))
-            description = re.sub(r"\s+", " ", text).strip()[:2000]
+    for label in ("Фармакологическое действие", "Показания к применению"):
+        chunk = _extract_labeled_paragraph(html, label)
+        if chunk:
+            description = chunk if not description else f"{description} {chunk}"
+            if len(description) >= 900:
+                break
+    description = description[:2000]
 
+    instructions_parts: list[str] = []
+    for label in (
+        "Способ применения и дозы",
+        "Способ применения",
+        "Противопоказания",
+        "Особые указания",
+    ):
+        chunk = _extract_labeled_paragraph(html, label)
+        if chunk:
+            instructions_parts.append(f"{label}: {chunk}")
+    instructions = "\n\n".join(instructions_parts)[:4000]
+
+    dosage = ""
     m_form = re.search(
         r"Лекарственная форма[\s\S]{0,600}?<p[^>]*>(.*?)</p>",
         html,
@@ -131,7 +153,7 @@ def parse_drug_detail(html: str, *, slug: str) -> dict[str, str]:
         text = re.sub(r"<[^>]+>", " ", m_form.group(1))
         dosage = re.sub(r"\s+", " ", text).strip()[:255]
 
-    return {"name": name[:255], "description": description, "dosage": dosage}
+    return {"name": name[:255], "description": description, "dosage": dosage, "instructions": instructions}
 
 
 def drug_item_from_slug(
@@ -144,6 +166,7 @@ def drug_item_from_slug(
     return {
         "name": name[:255],
         "description": (detail.get("description") or f"Источник: vidal.ru/drugs/{slug}")[:2000],
+        "instructions": (detail.get("instructions") or "")[:4000],
         "dosage": (detail.get("dosage") or "")[:255],
         "external_source": "vidal",
         "external_id": slug,

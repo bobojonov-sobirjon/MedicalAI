@@ -116,22 +116,39 @@ class CityListView(APIView):
                 required=False,
                 description="region | city | district (по умолчанию city+region)",
             ),
-            OpenApiParameter(name="limit", type=int, required=False, description="Лимит (по умолчанию 200, максимум 500)"),
+            OpenApiParameter(name="limit", required=False, type=int, description="Лимит (по умолчанию 500, максимум 2000)"),
         ],
     )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
         level = (request.query_params.get("level") or "").strip().lower()
-        limit = min(int(request.query_params.get("limit") or 200), 500)
-        rows = City.objects.all().order_by("name")
+        default_limit = 500 if q else 300
+        max_limit = 2000 if q else 1000
+        try:
+            limit = int(request.query_params.get("limit") or default_limit)
+        except (TypeError, ValueError):
+            limit = default_limit
+        limit = min(max(limit, 1), max_limit)
+
+        rows = City.objects.all().order_by("sort_order", "name")
         if level in {City.GeoLevel.REGION, City.GeoLevel.CITY, City.GeoLevel.DISTRICT}:
             rows = rows.filter(geo_level=level)
+        elif not q:
+            # Picker for pharmacies/hospitals: major cities only (no regions/districts).
+            rows = rows.filter(geo_level=City.GeoLevel.CITY)
         else:
             rows = rows.exclude(geo_level=City.GeoLevel.DISTRICT)
+
         if q:
             rows = rows.filter(name__icontains=q)
+        else:
+            from apps.medic.city_quality import has_cyrillic
+
+            rows = [c for c in rows if has_cyrillic(c.name)]
+
+        sliced = rows[:limit] if isinstance(rows, list) else rows[:limit]
         return Response(
-            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in rows[:limit]]
+            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in sliced]
         )
 
 

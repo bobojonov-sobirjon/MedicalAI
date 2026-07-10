@@ -44,7 +44,10 @@ def _upsert_disease(name: str, description: str, *, dry_run: bool) -> tuple[str,
         return "skip", None
     existing = Disease.objects.filter(name__iexact=name).first()
     if existing:
-        if description and existing.description != description:
+        if description and (
+            not existing.description
+            or len(description.strip()) > len((existing.description or "").strip())
+        ):
             if not dry_run:
                 existing.description = description
                 existing.save(update_fields=["description", "updated_at"])
@@ -62,6 +65,7 @@ def _upsert_drug(
     dosage: str,
     *,
     dry_run: bool,
+    instructions: str = "",
 ) -> tuple[str, Drug | None]:
     name = name.strip()
     if not name:
@@ -69,18 +73,32 @@ def _upsert_drug(
     existing = Drug.objects.filter(name__iexact=name).first()
     if existing:
         changed = False
-        if description and existing.description != description:
+        if description and (
+            not existing.description
+            or len(description.strip()) > len((existing.description or "").strip())
+        ):
             existing.description = description
+            changed = True
+        if instructions and (
+            not existing.instructions
+            or len(instructions.strip()) > len((existing.instructions or "").strip())
+        ):
+            existing.instructions = instructions
             changed = True
         if dosage and existing.dosage != dosage:
             existing.dosage = dosage
             changed = True
         if changed and not dry_run:
-            existing.save(update_fields=["description", "dosage", "updated_at"])
+            existing.save(update_fields=["description", "instructions", "dosage", "updated_at"])
         return "updated" if changed else "exists", existing
     if dry_run:
         return "created", None
-    obj = Drug.objects.create(name=name, description=description, dosage=dosage)
+    obj = Drug.objects.create(
+        name=name,
+        description=description,
+        instructions=instructions,
+        dosage=dosage,
+    )
     return "created", obj
 
 
@@ -105,7 +123,8 @@ def import_drugs_csv(path: Path, *, dry_run: bool = False) -> CatalogImportResul
         name = row.get("name") or row.get("drug") or row.get("название") or ""
         description = row.get("description") or row.get("описание") or ""
         dosage = row.get("dosage") or row.get("дозировка") or ""
-        status, _ = _upsert_drug(name, description, dosage, dry_run=dry_run)
+        instructions = row.get("instructions") or row.get("инструкция") or ""
+        status, _ = _upsert_drug(name, description, dosage, dry_run=dry_run, instructions=instructions)
         if status == "created":
             result.drugs_created += 1
         elif status == "updated":

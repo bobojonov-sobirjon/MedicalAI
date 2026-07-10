@@ -26,24 +26,26 @@ _SYSTEM = """Ты медицинский информационный помощ
 """
 
 
-def _catalog_slice(symptoms: str, *, limit: int = 14) -> list[dict[str, Any]]:
+def _catalog_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
     q = symptoms.strip()
     if len(q) < 2:
         return []
-    tokens = [t for t in q.replace(",", " ").split() if len(t) >= 3][:8]
+    tokens = [t for t in q.replace(",", " ").split() if len(t) >= 3][:6]
     qs = Disease.objects.all()
     cond = Q()
     for t in tokens:
         cond |= Q(name__icontains=t) | Q(description__icontains=t)
     if not tokens:
-        cond = Q(name__icontains=q[:64]) | Q(description__icontains=q[:200])
+        cond = Q(name__icontains=q[:64]) | Q(description__icontains=q[:120])
     rows = list(qs.filter(cond).distinct().order_by("name")[:limit])
     if not rows and q:
-        rows = list(Disease.objects.filter(Q(name__icontains=q[:80]) | Q(description__icontains=q[:200])).order_by("name")[:limit])
-    return [{"id": d.id, "name": d.name, "description": (d.description or "")[:1200]} for d in rows]
+        rows = list(
+            Disease.objects.filter(Q(name__icontains=q[:80]) | Q(description__icontains=q[:120])).order_by("name")[:limit]
+        )
+    return [{"id": d.id, "name": d.name, "description": (d.description or "")[:400]} for d in rows]
 
 
-def _faq_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
+def _faq_slice(symptoms: str, *, limit: int = 4) -> list[dict[str, Any]]:
     q = symptoms.strip()
     if len(q) < 2:
         return []
@@ -51,7 +53,7 @@ def _faq_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
         FaqItem.objects.filter(is_active=True)
         .filter(Q(question__icontains=q) | Q(answer__icontains=q))[:limit]
     )
-    return [{"id": f.id, "question": f.question, "answer": (f.answer or "")[:800]} for f in rows]
+    return [{"id": f.id, "question": f.question, "answer": (f.answer or "")[:400]} for f in rows]
 
 
 def _symptoms_text_from_ids(symptom_ids: list[int]) -> tuple[str, list[dict[str, Any]]]:

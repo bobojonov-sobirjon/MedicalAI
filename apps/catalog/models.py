@@ -58,6 +58,12 @@ class BodyPart(TimeStampedModel):
 class Drug(TimeStampedModel):
     name = models.CharField("Название", max_length=255, unique=True)
     description = models.TextField("Описание", blank=True, default="")
+    instructions = models.TextField(
+        "Инструкция по применению",
+        blank=True,
+        default="",
+        help_text="Полная инструкция: показания, способ применения, дозы.",
+    )
     dosage = models.CharField("Дозировка", max_length=255, blank=True, default="")
     image = models.ImageField("Изображение", upload_to="drugs/", blank=True, null=True)
     diseases = models.ManyToManyField(

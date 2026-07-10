@@ -32,20 +32,26 @@ class Command(BaseCommand):
             if not path.exists():
                 self.stdout.write(self.style.WARNING(f"Skip: {path} not found"))
                 continue
+            sort_idx = 0
             for row in iter_csv_rows(path):
+                sort_idx += 1
                 name = clean_city_label(row.get("name") or row.get("city") or "")
                 if not name or is_blocked_city_name(name):
                     skipped += 1
                     continue
                 geo_level = level if level == City.GeoLevel.REGION else infer_geo_level(name)
-                if City.objects.filter(name__iexact=name).exists():
+                existing = City.objects.filter(name__iexact=name).first()
+                if existing:
                     if not options["dry_run"]:
-                        City.objects.filter(name__iexact=name).update(geo_level=geo_level)
+                        City.objects.filter(pk=existing.pk).update(
+                            geo_level=geo_level,
+                            sort_order=sort_idx if geo_level == City.GeoLevel.CITY else existing.sort_order,
+                        )
                     continue
                 if options["dry_run"]:
                     created += 1
                     continue
-                City.objects.create(name=name, geo_level=geo_level)
+                City.objects.create(name=name, geo_level=geo_level, sort_order=sort_idx)
                 created += 1
 
         prefix = "[dry-run] " if options["dry_run"] else ""

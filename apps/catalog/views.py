@@ -33,10 +33,14 @@ class PublicDiseaseListView(APIView):
     )
     def get(self, request):
         q = _query_param(request, "q")
+        try:
+            limit = min(int(request.query_params.get("limit") or 500), 2000)
+        except (TypeError, ValueError):
+            limit = 500
         qs = Disease.objects.all().order_by("name")
         if q:
             qs = qs.filter(Q(name__icontains=q))
-        return Response(DiseaseSerializer(qs, many=True, context={"request": request}).data)
+        return Response(DiseaseSerializer(qs[:limit], many=True, context={"request": request}).data)
 
 
 class PublicDiseaseDetailView(APIView):
@@ -105,10 +109,14 @@ class PublicDrugListView(APIView):
     )
     def get(self, request):
         q = _query_param(request, "q")
-        qs = Drug.objects.all().order_by("name")
+        try:
+            limit = min(int(request.query_params.get("limit") or 500), 2000)
+        except (TypeError, ValueError):
+            limit = 500
+        qs = Drug.objects.prefetch_related("diseases").all().order_by("name")
         if q:
             qs = qs.filter(Q(name__icontains=q))
-        return Response(DrugSerializer(qs, many=True, context={"request": request}).data)
+        return Response(DrugSerializer(qs[:limit], many=True, context={"request": request}).data)
 
 
 class PublicDrugDetailView(APIView):
@@ -116,6 +124,6 @@ class PublicDrugDetailView(APIView):
 
     @extend_schema(tags=["Лекарства"], summary="Получить лекарство")
     def get(self, request, pk: int):
-        obj = Drug.objects.get(pk=pk)
+        obj = get_object_or_404(Drug.objects.prefetch_related("diseases"), pk=pk)
         return Response(DrugSerializer(obj, context={"request": request}).data)
 
