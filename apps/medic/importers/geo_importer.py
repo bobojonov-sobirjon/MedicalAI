@@ -59,7 +59,7 @@ def _get_or_create_city(
     if dry_run:
         return None
     level = geo_level or infer_geo_level(name)
-    return City.objects.create(name=name, geo_level=level)
+    return City.objects.create(name=name, geo_level=level, sort_order=0)
 
 
 @transaction.atomic

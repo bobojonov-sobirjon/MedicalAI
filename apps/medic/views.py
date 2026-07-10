@@ -107,9 +107,18 @@ class CityListView(APIView):
     @extend_schema(
         tags=["Медучреждения"],
         summary="Список городов (А–Я)",
-        description="Используется для автодополнения города. Можно передать `q` для фильтра по подстроке.",
+        description=(
+            "Список крупных городов России для фильтра аптек/больниц. "
+            "Передайте `q` для поиска по подстроке (например `?q=екат` → Екатеринбург). "
+            "Без `q` возвращаются только города из справочника (~137), без OSM-посёлков."
+        ),
         parameters=[
-            OpenApiParameter(name="q", type=str, required=False, description="Поиск по названию города"),
+            OpenApiParameter(
+                name="q",
+                type=str,
+                required=False,
+                description="Поиск города по подстроке (обязательно для UI-поля поиска)",
+            ),
             OpenApiParameter(
                 name="level",
                 type=str,
@@ -121,34 +130,21 @@ class CityListView(APIView):
     )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
-        level = (request.query_params.get("level") or "").strip().lower()
-        default_limit = 500 if q else 300
-        max_limit = 2000 if q else 1000
         try:
-            limit = int(request.query_params.get("limit") or default_limit)
+            limit = int(request.query_params.get("limit") or (200 if not q else 500))
         except (TypeError, ValueError):
-            limit = default_limit
-        limit = min(max(limit, 1), max_limit)
+            limit = 200 if not q else 500
+        limit = min(max(limit, 1), 2000)
 
-        rows = City.objects.all().order_by("sort_order", "name")
-        if level in {City.GeoLevel.REGION, City.GeoLevel.CITY, City.GeoLevel.DISTRICT}:
-            rows = rows.filter(geo_level=level)
-        elif not q:
-            # Picker for pharmacies/hospitals: major cities only (no regions/districts).
-            rows = rows.filter(geo_level=City.GeoLevel.CITY)
-        else:
-            rows = rows.exclude(geo_level=City.GeoLevel.DISTRICT)
-
+        rows = (
+            City.objects.filter(geo_level=City.GeoLevel.CITY, sort_order__gt=0)
+            .order_by("sort_order", "name")
+        )
         if q:
             rows = rows.filter(name__icontains=q)
-        else:
-            from apps.medic.city_quality import has_cyrillic
 
-            rows = [c for c in rows if has_cyrillic(c.name)]
-
-        sliced = rows[:limit] if isinstance(rows, list) else rows[:limit]
         return Response(
-            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in sliced]
+            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in rows[:limit]]
         )
 
 

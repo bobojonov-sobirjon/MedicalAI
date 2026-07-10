@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.medic.city_quality import city_has_facilities, is_junk_city_name, latin_city_to_cyrillic
+from apps.medic.city_quality import city_has_facilities, is_osm_junk_city, latin_city_to_cyrillic
 from apps.medic.models import City, MedicalFacility
 
 
@@ -39,7 +39,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  rename {city.name}")
                 continue
 
-            if not is_junk_city_name(city.name):
+            if not is_osm_junk_city(city):
                 continue
 
             if city_has_facilities(city.id):
