@@ -7,6 +7,7 @@ from .survey_views import SurveyAnswerView, SurveyListView
 urlpatterns = [
     path("content/pages/<slug:slug>/", views.StaticPageView.as_view(), name="static-page"),
     path("content/config/", views.AppConfigView.as_view(), name="app-config"),
+    path("content/useful-tips/", views.HomeUsefulTipsView.as_view(), name="home-useful-tips"),
     path("geo/cities/", views.CityListView.as_view(), name="geo-cities"),
     path("geo/facilities/", views.FacilityListView.as_view(), name="geo-facilities"),
     path("geo/facilities/<int:pk>/", views.FacilityDetailView.as_view(), name="geo-facility-detail"),

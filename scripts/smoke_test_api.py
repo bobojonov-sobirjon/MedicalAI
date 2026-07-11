@@ -223,8 +223,10 @@ def run_smoke(*, base_url: str, token: str) -> int:
     if isinstance(ev_id, int):
         do("Mark event read", "POST", f"/api/me/notifications/events/{ev_id}/read/", json_body={}, expected={200, 404})
     do("Useful feed", "GET", "/api/me/notifications/useful/", expected={200})
+    do("Home useful tips", "GET", "/api/content/useful-tips/", expected={200})
     do("Tip settings get", "GET", "/api/me/tip-settings/", expected={200})
-    do("Tip settings patch", "PATCH", "/api/me/tip-settings/", json_body={"tips_per_day": 3, "useful_subscribed": True}, expected={200})
+    do("Tip settings patch", "PATCH", "/api/me/tip-settings/", json_body={"tips_per_day": 3, "useful_subscribed": True, "home_tips_hidden": False}, expected={200})
+    do("Hide home tips", "PATCH", "/api/me/tip-settings/", json_body={"home_tips_hidden": True}, expected={200})
     if isinstance(disease_id, int):
         do("Subscribe tips by disease", "POST", f"/api/me/disease-tip-subscribe/{disease_id}/", json_body={}, expected={200})
         do("Unsubscribe tips by disease", "DELETE", f"/api/me/disease-tip-subscribe/{disease_id}/", expected={204})

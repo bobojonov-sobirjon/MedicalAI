@@ -71,7 +71,7 @@ class MedicalFacility(models.Model):
 
 
 class UsefulTip(models.Model):
-    """ТЗ §5.5 / §7.12.2 — полезные советы (опционально привязаны к болезни)."""
+    """ТЗ §5.5 / §7.6 / §7.12.2 — полезные советы (главная + вкладка «Полезное»)."""
 
     disease = models.ForeignKey(
         "catalog.Disease",
@@ -83,6 +83,18 @@ class UsefulTip(models.Model):
     )
     title = models.CharField("Заголовок", max_length=255)
     body = models.TextField("Текст")
+    image = models.ImageField(
+        "Картинка (баннер на главной)",
+        upload_to="useful_tips/",
+        blank=True,
+        null=True,
+        help_text="Иллюстрация для карусели на главной странице (ТЗ §7.6).",
+    )
+    show_on_home = models.BooleanField(
+        "Показывать на главной",
+        default=True,
+        help_text="Баннер «полезные советы» вверху главной страницы ЛК.",
+    )
     is_active = models.BooleanField("Включено", default=True)
     sort_order = models.PositiveIntegerField("Порядок", default=0)
     created_at = models.DateTimeField("Создано", auto_now_add=True)
@@ -134,6 +146,11 @@ class UserTipSettings(models.Model):
     )
     tips_per_day = models.PositiveSmallIntegerField("Советов в сутки", default=3)
     useful_subscribed = models.BooleanField("Подписка на полезное", default=False)
+    home_tips_hidden = models.BooleanField(
+        "Скрыть блок советов на главной",
+        default=False,
+        help_text="ТЗ §7.6: пользователь скрыл баннер; снова показать — знак вопроса.",
+    )
 
     class Meta:
         verbose_name = "Настройки советов"

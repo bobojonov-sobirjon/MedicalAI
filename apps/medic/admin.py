@@ -59,8 +59,15 @@ class MedicalFacilityAdmin(admin.ModelAdmin):
 
 @admin.register(UsefulTip)
 class UsefulTipAdmin(admin.ModelAdmin):
-    list_display = ("title", "disease", "is_active", "sort_order")
-    list_filter = ("is_active",)
+    list_display = ("title", "disease", "show_on_home", "is_active", "sort_order", "has_image")
+    list_filter = ("is_active", "show_on_home")
+    search_fields = ("title", "body")
+    list_editable = ("is_active", "show_on_home", "sort_order")
+    fields = ("title", "body", "image", "disease", "show_on_home", "is_active", "sort_order")
+
+    @admin.display(boolean=True, description="Картинка")
+    def has_image(self, obj: UsefulTip) -> bool:
+        return bool(obj.image)
 
 
 @admin.register(AppUpdateBroadcast)
@@ -70,7 +77,7 @@ class AppUpdateBroadcastAdmin(admin.ModelAdmin):
 
 @admin.register(UserTipSettings)
 class UserTipSettingsAdmin(admin.ModelAdmin):
-    list_display = ("user", "tips_per_day", "useful_subscribed")
+    list_display = ("user", "tips_per_day", "useful_subscribed", "home_tips_hidden")
 
 
 @admin.register(DiseaseTipSubscription)

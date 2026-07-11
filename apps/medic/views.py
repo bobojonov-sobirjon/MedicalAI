@@ -283,6 +283,58 @@ class AppConfigView(APIView):
 
 
 # --- Tips & notifications ---
+def _tip_payload(request, tip: UsefulTip) -> dict:
+    from apps.core.media_urls import file_field_url
+
+    return {
+        "id": tip.id,
+        "title": tip.title,
+        "body": tip.body,
+        "image_url": file_field_url(request, tip.image if tip.image else None),
+        "disease_id": tip.disease_id,
+        "sort_order": tip.sort_order,
+        "updated_at": tip.updated_at or tip.created_at,
+    }
+
+
+class HomeUsefulTipsView(APIView):
+    """ТЗ §7.6 — баннер полезных советов на главной странице ЛК."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Полезные советы"],
+        summary="Советы для баннера на главной (карусель)",
+        description=(
+            "ТЗ §7.6 / §5.5: список активных советов для блока вверху главной. "
+            "Админ добавляет советы в «Полезные советы». "
+            "`home_tips_hidden=true` — блок скрыт; на клиенте показывать только «?», "
+            "по нажатию вызвать PATCH /api/me/tip-settings/ с `home_tips_hidden: false`."
+        ),
+        responses={
+            200: inline_serializer(
+                name="HomeUsefulTipsResponse",
+                fields={
+                    "home_tips_hidden": serializers.BooleanField(),
+                    "tips": serializers.ListField(child=serializers.DictField()),
+                },
+            ),
+        },
+    )
+    def get(self, request):
+        settings_obj, _ = UserTipSettings.objects.get_or_create(user=request.user)
+        tips = (
+            UsefulTip.objects.filter(is_active=True, show_on_home=True)
+            .order_by("sort_order", "id")[:30]
+        )
+        return Response(
+            {
+                "home_tips_hidden": settings_obj.home_tips_hidden,
+                "tips": [_tip_payload(request, t) for t in tips],
+            }
+        )
+
+
 class UsefulCombinedFeedView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -304,16 +356,10 @@ class UsefulCombinedFeedView(APIView):
         if request.user.useful_tips_subscribed:
             tips = UsefulTip.objects.filter(is_active=True).order_by("sort_order", "id")[:50]
             for t in tips:
-                out.append(
-                    {
-                        "type": "tip",
-                        "id": t.id,
-                        "title": t.title,
-                        "body": t.body,
-                        "disease_id": t.disease_id,
-                        "at": t.updated_at or t.created_at,
-                    }
-                )
+                payload = _tip_payload(request, t)
+                payload["type"] = "tip"
+                payload["at"] = payload.pop("updated_at")
+                out.append(payload)
         return Response(out)
 
 
@@ -336,25 +382,36 @@ class UserTipSettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Уведомления"],
-        summary="Настройки советов (лимит в сутки, подписка)",
+        tags=["Полезные советы"],
+        summary="Настройки советов (лимит, подписка, скрытие баннера на главной)",
         responses={
             200: inline_serializer(
                 name="UserTipSettingsGet",
                 fields={
                     "tips_per_day": serializers.IntegerField(),
                     "useful_subscribed": serializers.BooleanField(),
+                    "home_tips_hidden": serializers.BooleanField(),
                 },
             ),
         },
     )
     def get(self, request):
         obj, _ = UserTipSettings.objects.get_or_create(user=request.user)
-        return Response({"tips_per_day": obj.tips_per_day, "useful_subscribed": obj.useful_subscribed})
+        return Response(
+            {
+                "tips_per_day": obj.tips_per_day,
+                "useful_subscribed": obj.useful_subscribed,
+                "home_tips_hidden": obj.home_tips_hidden,
+            }
+        )
 
     @extend_schema(
-        tags=["Уведомления"],
-        summary="Обновить настройки советов",
+        tags=["Полезные советы"],
+        summary="Обновить настройки советов / скрыть-показать баннер на главной",
+        description=(
+            "ТЗ §7.6: скрыть блок советов — `home_tips_hidden: true`. "
+            "Показать снова (знак «?» на главной) — `home_tips_hidden: false`."
+        ),
         request=inline_serializer(
             name="UserTipSettingsPatch",
             fields={
@@ -368,6 +425,10 @@ class UserTipSettingsView(APIView):
                     required=False,
                     help_text="Подписка на вкладку «Полезное».",
                 ),
+                "home_tips_hidden": serializers.BooleanField(
+                    required=False,
+                    help_text="Скрыть баннер советов на главной (true) / показать (false).",
+                ),
             },
         ),
         responses={
@@ -376,6 +437,7 @@ class UserTipSettingsView(APIView):
                 fields={
                     "tips_per_day": serializers.IntegerField(),
                     "useful_subscribed": serializers.BooleanField(),
+                    "home_tips_hidden": serializers.BooleanField(),
                 },
             ),
         },
@@ -389,8 +451,20 @@ class UserTipSettingsView(APIView):
             obj.useful_subscribed = bool(request.data["useful_subscribed"])
             request.user.useful_tips_subscribed = obj.useful_subscribed
             request.user.save(update_fields=["useful_tips_subscribed"])
+        if "home_tips_hidden" in request.data:
+            raw = request.data["home_tips_hidden"]
+            if isinstance(raw, str):
+                obj.home_tips_hidden = raw.strip().lower() in {"1", "true", "yes", "on"}
+            else:
+                obj.home_tips_hidden = bool(raw)
         obj.save()
-        return Response({"tips_per_day": obj.tips_per_day, "useful_subscribed": obj.useful_subscribed})
+        return Response(
+            {
+                "tips_per_day": obj.tips_per_day,
+                "useful_subscribed": obj.useful_subscribed,
+                "home_tips_hidden": obj.home_tips_hidden,
+            }
+        )
 
 
 class DiseaseTipSubscribeView(APIView):
