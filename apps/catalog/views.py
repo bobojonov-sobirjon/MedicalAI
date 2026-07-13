@@ -34,12 +34,25 @@ class PublicDiseaseListView(APIView):
     def get(self, request):
         q = _query_param(request, "q")
         try:
-            limit = min(int(request.query_params.get("limit") or 500), 2000)
+            limit = min(int(request.query_params.get("limit") or (200 if q else 500)), 2000)
         except (TypeError, ValueError):
-            limit = 500
+            limit = 200 if q else 500
         qs = Disease.objects.all().order_by("name")
         if q:
-            qs = qs.filter(Q(name__icontains=q))
+            # История болезней / автокомплит: по названию и описанию (МКБ-код тоже в description).
+            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+            # Короткие совпадения по названию выше длинных МКБ-формулировок.
+            from django.db.models import Case, IntegerField, Value, When
+
+            qs = qs.annotate(
+                _rank=Case(
+                    When(name__iexact=q, then=Value(0)),
+                    When(name__istartswith=q, then=Value(1)),
+                    When(name__icontains=q, then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                )
+            ).order_by("_rank", "name")
         return Response(DiseaseSerializer(qs[:limit], many=True, context={"request": request}).data)
 
 

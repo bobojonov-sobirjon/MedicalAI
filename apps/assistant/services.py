@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any
 
 from django.contrib.auth import get_user_model
@@ -23,7 +24,14 @@ _SYSTEM = """Ты медицинский информационный помощ
 - Обязательно укажи, что нужна очная консультация врача.
 - Ответ строго JSON-объект на русском по схеме из запроса пользователя.
 - Учитывай только переданный контекст справочника и симптомы; не выдумывай редкие болезни без оснований.
+- Пиши кратко.
 """
+
+
+def _soft_ai_timeout_s() -> float:
+    """Client often times out at ~30s; return catalog before that."""
+    configured = float(getattr(settings, "RUTRONIX_CHAT_TIMEOUT_S", 60) or 60)
+    return max(8.0, min(configured - 5.0, 25.0))
 
 
 def _catalog_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
@@ -42,10 +50,10 @@ def _catalog_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = list(
             Disease.objects.filter(Q(name__icontains=q[:80]) | Q(description__icontains=q[:120])).order_by("name")[:limit]
         )
-    return [{"id": d.id, "name": d.name, "description": (d.description or "")[:400]} for d in rows]
+    return [{"id": d.id, "name": d.name, "description": (d.description or "")[:280]} for d in rows]
 
 
-def _faq_slice(symptoms: str, *, limit: int = 4) -> list[dict[str, Any]]:
+def _faq_slice(symptoms: str, *, limit: int = 3) -> list[dict[str, Any]]:
     q = symptoms.strip()
     if len(q) < 2:
         return []
@@ -53,7 +61,7 @@ def _faq_slice(symptoms: str, *, limit: int = 4) -> list[dict[str, Any]]:
         FaqItem.objects.filter(is_active=True)
         .filter(Q(question__icontains=q) | Q(answer__icontains=q))[:limit]
     )
-    return [{"id": f.id, "question": f.question, "answer": (f.answer or "")[:400]} for f in rows]
+    return [{"id": f.id, "question": f.question, "answer": (f.answer or "")[:280]} for f in rows]
 
 
 def _symptoms_text_from_ids(symptom_ids: list[int]) -> tuple[str, list[dict[str, Any]]]:
@@ -95,6 +103,31 @@ def _user_context_line(user: User) -> str:
     return "; ".join(parts) if parts else "Профиль без дополнительных полей."
 
 
+def _fallback_ai(catalog: list[dict[str, Any]], *, reason: str) -> dict[str, Any]:
+    conditions = [
+        {
+            "name": c["name"],
+            "rationale": "Совпадение по симптомам в локальном справочнике.",
+            "urgency": "soon",
+        }
+        for c in catalog[:5]
+    ]
+    return {
+        "summary": (
+            "Ниже — возможные варианты из справочника по вашим симптомам. "
+            "Это не диагноз; при ухудшении обратитесь к врачу."
+        ),
+        "possible_conditions": conditions,
+        "match_catalog_ids": [c["id"] for c in catalog[:8]],
+        "suggested_next_steps": [
+            "Обратитесь к врачу при ухудшении состояния.",
+            "При высокой температуре, одышке или сильной боли — срочная помощь.",
+        ],
+        "disclaimer": "Информация не является медицинской консультацией.",
+        "_fallback_reason": reason,
+    }
+
+
 def run_diagnosis(
     *,
     user: User,
@@ -119,44 +152,41 @@ def run_diagnosis(
 
     schema_hint = """Верни JSON:
 {
-  "summary": "краткое резюме для пользователя (2-5 предложений)",
+  "summary": "краткое резюме (2-4 предложения)",
   "possible_conditions": [{"name": "строка", "rationale": "почему возможно", "urgency": "routine|soon|urgent"}],
-  "match_catalog_ids": [числа — id из переданного справочника, которые наиболее релевантны],
-  "suggested_next_steps": ["шаги для пользователя"],
-  "disclaimer": "обязательное напоминание про врача и что это не диагноз"
+  "match_catalog_ids": [id из справочника],
+  "suggested_next_steps": ["шаги"],
+  "disclaimer": "не диагноз, нужен врач"
 }"""
 
     user_prompt = f"""Профиль: {_user_context_line(profile_user)}
 Части тела: {body_parts_s}
 Температура: {temp_s}
 Давление: {bp_s}
-Симптомы (из справочника по ID):
-{symptoms_from_ids or "не указано"}
-
-Доп. симптомы/уточнения (текст):
-{(symptoms_text or "").strip() or "не указано"}
-
-Фрагмент справочника заболеваний (JSON):
-{catalog_json}
-
-Фрагмент базы вопросов/ответов (JSON, ТЗ §6.1):
-{faq_json}
-
+Симптомы: {symptoms_from_ids or "не указано"}
+Уточнения: {(symptoms_text or "").strip() or "не указано"}
+Справочник: {catalog_json}
+FAQ: {faq_json}
 {schema_hint}"""
 
+    soft_timeout = _soft_ai_timeout_s()
+    ai_error: str | None = None
+
+    def _call_ai() -> dict[str, Any]:
+        return generate_json(_SYSTEM, user_prompt, temperature=0.2)
+
     try:
-        ai = generate_json(_SYSTEM, user_prompt, temperature=0.25)
-        ai_error: str | None = None
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_call_ai)
+            ai = future.result(timeout=soft_timeout)
+    except FuturesTimeout:
+        logger.warning("AI diagnose soft-timeout after %.1fs — catalog fallback", soft_timeout)
+        ai_error = f"Timeout after {soft_timeout:.0f}s"
+        ai = _fallback_ai(catalog, reason=ai_error)
     except (GeminiConfigError, RuntimeError, OSError, ValueError, Exception) as e:
         logger.exception("AI diagnose failed: %s", e)
         ai_error = f"{type(e).__name__}: {e}"
-        ai = {
-            "summary": "ИИ временно недоступен или вернул неожиданный ответ. Ниже — совпадения из локального справочника.",
-            "possible_conditions": [],
-            "match_catalog_ids": [c["id"] for c in catalog],
-            "suggested_next_steps": ["Обратитесь к врачу при ухудшении состояния."],
-            "disclaimer": "Информация не является медицинской консультацией.",
-        }
+        ai = _fallback_ai(catalog, reason=ai_error)
 
     match_ids = ai.get("match_catalog_ids") or []
     if not isinstance(match_ids, list):
@@ -165,6 +195,9 @@ def run_diagnosis(
     matched = [c for c in catalog if c["id"] in match_ids]
     if not matched and catalog:
         matched = catalog[:5]
+
+    if not ai.get("possible_conditions") and catalog:
+        ai["possible_conditions"] = _fallback_ai(catalog, reason="empty_ai").get("possible_conditions")
 
     return {
         "symptoms_resolved": symptoms_resolved,

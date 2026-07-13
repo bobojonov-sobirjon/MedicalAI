@@ -60,6 +60,11 @@ class Command(BaseCommand):
         if diseases_csv.exists():
             import_catalog_from_files(diseases_path=diseases_csv, dry_run=dry_run)
 
+        if not dry_run:
+            call_command("link_disease_drugs")
+        else:
+            call_command("link_disease_drugs", dry_run=True)
+
         self.stdout.write(self.style.MIGRATE_HEADING("5/7 Справочник лекарств + связи"))
         drugs_csv = resolve_data_path("drugs.csv", base=base)
         links_csv = resolve_data_path("disease_drug_links.csv", base=base)

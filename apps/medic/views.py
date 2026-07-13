@@ -188,7 +188,13 @@ class FacilityListView(APIView):
                 name="q",
                 type=str,
                 required=False,
-                description="Поиск по названию или адресу",
+                description="Поиск по названию или адресу. Цифры (напр. 40) ищут «ГКБ №40».",
+            ),
+            OpenApiParameter(
+                name="limit",
+                type=int,
+                required=False,
+                description="Лимит (по умолчанию 500, максимум 2000)",
             ),
         ],
     )
@@ -196,13 +202,48 @@ class FacilityListView(APIView):
         kind = (request.query_params.get("kind") or "").strip()
         city_id = request.query_params.get("city_id")
         q = (request.query_params.get("q") or "").strip()
+        try:
+            limit = min(int(request.query_params.get("limit") or 500), 2000)
+        except (TypeError, ValueError):
+            limit = 500
+
         qs = MedicalFacility.objects.filter(is_active=True).select_related("city")
         if kind in ("pharmacy", "hospital"):
             qs = qs.filter(kind=kind)
         if city_id and str(city_id).isdigit():
             qs = qs.filter(city_id=int(city_id))
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(address__icontains=q))
+            from django.db.models import Case, IntegerField, Value, When
+
+            cond = Q(name__icontains=q) | Q(address__icontains=q)
+            # «40» → ГКБ №40 / Больница 40 / № 40 (как в Яндекс.Картах)
+            digits = "".join(ch for ch in q if ch.isdigit())
+            if digits and (q == digits or len(digits) >= 1):
+                for pattern in (
+                    f"№{digits}",
+                    f"№ {digits}",
+                    f"N{digits}",
+                    f"N {digits}",
+                    f"No.{digits}",
+                    f"No {digits}",
+                    f" {digits}",
+                    f"{digits} ",
+                    f"-{digits}",
+                    f"{digits}-",
+                ):
+                    cond |= Q(name__icontains=pattern)
+            qs = qs.filter(cond).annotate(
+                _rank=Case(
+                    When(name__iexact=q, then=Value(0)),
+                    When(name__istartswith=q, then=Value(1)),
+                    When(name__icontains=q, then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                )
+            ).order_by("_rank", "name")
+        else:
+            qs = qs.order_by("name")
+
         data = [
             {
                 "id": o.id,
@@ -218,7 +259,7 @@ class FacilityListView(APIView):
                 "city_id": o.city_id,
                 "city_name": o.city.name,
             }
-            for o in qs.order_by("name")[:500]
+            for o in qs[:limit]
         ]
         return Response(data)
 

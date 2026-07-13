@@ -503,7 +503,7 @@ RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').st
 # False = faqat RuTronix; Gemini zaxira o‘chirilgan (production uchun tavsiya).
 USE_GEMINI_FALLBACK = os.getenv('USE_GEMINI_FALLBACK', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 # httpx: text chat (uniform timeout, seconds)
-RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '60'))
+RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '28'))
 # Vision/OCR: split timeouts (httpx read = time to first byte + streaming body from RuTronix).
 # Default read 90s — OCR often needs 25–60s; cap read below Gunicorn --timeout (e.g. 120).
 RUTRONIX_VISION_WRITE_S = float(os.getenv('RUTRONIX_VISION_WRITE_S', '120'))

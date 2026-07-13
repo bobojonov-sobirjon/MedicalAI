@@ -18,6 +18,8 @@ class DiseaseSerializer(serializers.ModelSerializer):
 
 
 class DrugMiniPublicSerializer(serializers.ModelSerializer):
+    """Краткая карточка препарата внутри заболевания (2 строки + Далее на клиенте)."""
+
     description_preview = serializers.SerializerMethodField()
 
     class Meta:
@@ -25,7 +27,8 @@ class DrugMiniPublicSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "description", "description_preview", "dosage", "image", "rating")
 
     def get_description_preview(self, obj: Drug) -> str:
-        return description_preview(obj.description)
+        # Клиент показывает 1–2 строки; полное описание — на экране лекарства по id.
+        return description_preview(obj.description, max_chars=140)
 
 
 class DiseaseDetailSerializer(serializers.ModelSerializer):
@@ -58,8 +61,21 @@ class BodyPartSerializer(serializers.ModelSerializer):
         fields = ("id", "code", "label", "sort_order", "created_at", "updated_at")
 
 
+class DiseaseMiniPublicSerializer(serializers.ModelSerializer):
+    """Краткая карточка болезни внутри лекарства (кликабельный переход)."""
+
+    description_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Disease
+        fields = ("id", "name", "description_preview")
+
+    def get_description_preview(self, obj: Disease) -> str:
+        return description_preview(obj.description, max_chars=120)
+
+
 class DrugSerializer(serializers.ModelSerializer):
-    diseases = DiseaseSerializer(read_only=True, many=True)
+    diseases = DiseaseMiniPublicSerializer(read_only=True, many=True)
     in_my_cabinet = serializers.SerializerMethodField()
     description_preview = serializers.SerializerMethodField()
     instructions_preview = serializers.SerializerMethodField()
@@ -86,10 +102,10 @@ class DrugSerializer(serializers.ModelSerializer):
         }
 
     def get_description_preview(self, obj: Drug) -> str:
-        return description_preview(obj.description)
+        return description_preview(obj.description, max_chars=200)
 
     def get_instructions_preview(self, obj: Drug) -> str:
-        return description_preview(obj.instructions, max_chars=360)
+        return description_preview(obj.instructions, max_chars=200)
 
     def get_in_my_cabinet(self, obj: Drug) -> bool:
         request = self.context.get("request")
