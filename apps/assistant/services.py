@@ -27,6 +27,70 @@ _SYSTEM = """Ты медицинский информационный помощ
 - Пиши кратко.
 """
 
+DEFAULT_DISCLAIMER = (
+    "This information is for educational purposes only and is not medical advice. "
+    "Информация носит справочный характер и не является медицинской консультацией или диагнозом. "
+    "При ухудшении состояния обратитесь к врачу."
+)
+
+MEDICAL_SOURCES: list[dict[str, str]] = [
+    {"title": "World Health Organization", "url": "https://www.who.int"},
+    {"title": "CDC", "url": "https://www.cdc.gov"},
+    {"title": "Mayo Clinic", "url": "https://www.mayoclinic.org"},
+]
+
+
+def build_medical_answer(ai: dict[str, Any], matched: list[dict[str, Any]]) -> str:
+    """Собрать единый текст ответа для Flutter (поле answer)."""
+    parts: list[str] = []
+    summary = (ai.get("summary") or "").strip()
+    if summary:
+        parts.append(summary)
+
+    conditions = ai.get("possible_conditions") or []
+    if isinstance(conditions, list) and conditions:
+        lines = []
+        for item in conditions[:6]:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or "").strip()
+            rationale = (item.get("rationale") or "").strip()
+            if not name:
+                continue
+            if rationale:
+                lines.append(f"• {name} — {rationale}")
+            else:
+                lines.append(f"• {name}")
+        if lines:
+            parts.append("Возможные варианты:\n" + "\n".join(lines))
+    elif matched:
+        lines = [f"• {c['name']}" for c in matched[:6] if c.get("name")]
+        if lines:
+            parts.append("Возможные варианты из справочника:\n" + "\n".join(lines))
+
+    steps = ai.get("suggested_next_steps") or []
+    if isinstance(steps, list) and steps:
+        step_lines = [f"• {s}" for s in steps if isinstance(s, str) and s.strip()]
+        if step_lines:
+            parts.append("Что можно сделать:\n" + "\n".join(step_lines))
+
+    if not parts:
+        parts.append(
+            "По введённым симптомам не удалось сформировать подробный ответ. "
+            "Обратитесь к врачу при ухудшении самочувствия."
+        )
+    return "\n\n".join(parts)
+
+
+def build_medical_payload(ai: dict[str, Any], matched: list[dict[str, Any]]) -> dict[str, Any]:
+    """Flutter Variant 1: answer + disclaimer + sources."""
+    disclaimer = (ai.get("disclaimer") or "").strip() or DEFAULT_DISCLAIMER
+    return {
+        "answer": build_medical_answer(ai, matched),
+        "disclaimer": disclaimer,
+        "sources": list(MEDICAL_SOURCES),
+    }
+
 
 def _soft_ai_timeout_s() -> float:
     """Client often times out at ~30s; return catalog before that."""
@@ -199,17 +263,25 @@ FAQ: {faq_json}
     if not ai.get("possible_conditions") and catalog:
         ai["possible_conditions"] = _fallback_ai(catalog, reason="empty_ai").get("possible_conditions")
 
+    medical = build_medical_payload(ai, matched)
+
     return {
         "symptoms_resolved": symptoms_resolved,
         "body_parts_resolved": body_parts_resolved,
         "catalog_candidates": catalog,
         "faq_hits": faq,
         "catalog_matched": matched,
+        # Flutter Variant 1 — основной блок для UI
+        "answer": medical["answer"],
+        "disclaimer": medical["disclaimer"],
+        "sources": medical["sources"],
         "ai": {
             "summary": ai.get("summary", ""),
             "possible_conditions": ai.get("possible_conditions", []),
             "suggested_next_steps": ai.get("suggested_next_steps", []),
-            "disclaimer": ai.get("disclaimer", ""),
+            "disclaimer": medical["disclaimer"],
+            "answer": medical["answer"],
+            "sources": medical["sources"],
         },
         **({"ai_error": ai_error} if getattr(settings, "DEBUG", False) and ai_error else {}),
     }

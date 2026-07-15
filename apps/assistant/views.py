@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework import status
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -31,10 +31,14 @@ def _resolve_ordered(ids: list[int], by_id: dict[int, dict]) -> list[dict]:
 def _public_result(full_result: dict) -> dict:
     """
     Trim internal helper fields from run_diagnosis output.
-    Mobile only needs AI block + resolved selections.
+    Flutter Variant 1: answer + disclaimer + sources.
     """
+    ai = full_result.get("ai") or {}
     return {
-        "ai": full_result.get("ai", {}),
+        "answer": full_result.get("answer") or ai.get("answer") or "",
+        "disclaimer": full_result.get("disclaimer") or ai.get("disclaimer") or "",
+        "sources": full_result.get("sources") or ai.get("sources") or [],
+        "ai": ai,
     }
 
 
@@ -67,10 +71,22 @@ class DiagnoseView(APIView):
         tags=["Помощник"],
         summary="Диагностическая подсказка по симптомам (справочник + ИИ)",
         description=(
-            "Подбор релевантных заболеваний из локального справочника и структурированный ответ нейросети Google Gemini. "
+            "Подбор заболеваний по симптомам + ИИ-ответ. "
+            "Flutter: используйте поля `answer`, `disclaimer`, `sources` (Variant 1). "
             "Не заменяет очную консультацию врача."
         ),
         request=DiagnoseRequestSerializer,
+        responses={
+            200: inline_serializer(
+                name="DiagnoseMedicalResponse",
+                fields={
+                    "diagnosis_id": serializers.IntegerField(),
+                    "answer": serializers.CharField(),
+                    "disclaimer": serializers.CharField(),
+                    "sources": serializers.ListField(child=serializers.DictField()),
+                },
+            ),
+        },
     )
     def post(self, request):
         ser = DiagnoseRequestSerializer(data=request.data, context={"request": request})
