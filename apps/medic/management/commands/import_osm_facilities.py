@@ -48,6 +48,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Пропускать учреждения без картинки (по умолчанию импортируем ВСЕ, карту рисует клиент).",
         )
+        parser.add_argument(
+            "--no-images",
+            action="store_true",
+            help="Не скачивать картинки вообще (быстро). API отдаёт static-карту по координатам.",
+        )
         parser.add_argument("--limit", type=int, default=0)
         parser.add_argument("--offset", type=int, default=0)
         parser.add_argument("--image-delay", type=float, default=0.12)
@@ -66,9 +71,11 @@ class Command(BaseCommand):
 
         total = len(load_facilities_json(input_path))
         require_image = bool(options["require_image"])
+        download_images = not options["no_images"]
         self.stdout.write(
             f"Import: {input_path} ({total} yozuv), "
             + ("rasm majburiy" if require_image else "rasm ixtiyoriy — barcha yoziladi")
+            + ("" if download_images else " | rasm YUKLANMAYDI (tez rejim)")
         )
 
         state_path = base / options["state_file"]
@@ -97,7 +104,7 @@ class Command(BaseCommand):
 
         stats = import_yandex_facilities_json(
             input_path,
-            download_images=True,
+            download_images=download_images,
             require_image=require_image,
             allow_static_map_fallback=allow_static,
             skip_without_image=require_image,
@@ -105,7 +112,7 @@ class Command(BaseCommand):
             limit=options["limit"],
             offset=options["offset"],
             resume_state_path=state_path if options["resume"] else None,
-            image_delay_sec=options["image_delay"],
+            image_delay_sec=options["image_delay"] if download_images else 0.0,
             on_progress=on_progress,
         )
 
