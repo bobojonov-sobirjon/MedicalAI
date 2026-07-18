@@ -78,8 +78,24 @@ class Command(BaseCommand):
             f"shifoxona: {db_qs.filter(kind=MedicalFacility.Kind.HOSPITAL).count()}"
         )
 
-        if json_count and db_total >= json_count and db_with_image >= db_total:
-            self.stdout.write(self.style.SUCCESS("  IMPORT: TUGAGAN (JSON dagi hammasi DB da, rasmli)"))
+        if json_count and db_total >= json_count:
+            self.stdout.write(self.style.SUCCESS("  IMPORT: TUGAGAN (JSON dagi hammasi DB da)"))
+        elif json_count and len(imported_ids) >= json_count and db_total < json_count:
+            ghost = len(imported_ids) - db_total
+            self.stdout.write(
+                self.style.ERROR(
+                    f"  IMPORT STATE BUZILGAN: state={len(imported_ids)}, DB={db_total} "
+                    f"(~{ghost} ID state da bor, lekin DB da yo'q). "
+                    f"--resume hech narsa qilmaydi!"
+                )
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    "  Tuzatish:\n"
+                    "    python manage.py sync_osm_import_state\n"
+                    "    python manage.py import_osm_facilities --resume"
+                )
+            )
         elif json_count and db_total > 0:
             left = max(json_count - len(imported_ids), json_count - db_total)
             self.stdout.write(
@@ -98,4 +114,5 @@ class Command(BaseCommand):
         if total_regions and done_count < total_regions:
             self.stdout.write("  python manage.py parse_osm_facilities --all-regions --resume")
         if json_count and db_total < json_count:
+            self.stdout.write("  python manage.py sync_osm_import_state")
             self.stdout.write("  python manage.py import_osm_facilities --resume")

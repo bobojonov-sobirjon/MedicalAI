@@ -40,7 +40,7 @@ class Command(BaseCommand):
             call_command("cleanup_fake_catalog", dry_run=dry_run, aggressive=True)
 
         self.stdout.write(self.style.MIGRATE_HEADING("2/7 Очистка мусорных городов"))
-        call_command("cleanup_junk_cities", dry_run=dry_run)
+        call_command("cleanup_junk_cities", dry_run=dry_run, force=True)
 
         self.stdout.write(self.style.MIGRATE_HEADING("3/7 Импорт городов России"))
         call_command("import_russia_cities", dry_run=dry_run)
