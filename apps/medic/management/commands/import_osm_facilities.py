@@ -43,6 +43,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Do not use map snapshot fallback when OSM has no photo",
         )
+        parser.add_argument(
+            "--require-image",
+            action="store_true",
+            help="Пропускать учреждения без картинки (по умолчанию импортируем ВСЕ, карту рисует клиент).",
+        )
         parser.add_argument("--limit", type=int, default=0)
         parser.add_argument("--offset", type=int, default=0)
         parser.add_argument("--image-delay", type=float, default=0.12)
@@ -60,7 +65,11 @@ class Command(BaseCommand):
             )
 
         total = len(load_facilities_json(input_path))
-        self.stdout.write(f"Import: {input_path} ({total} yozuv), rasm majburiy")
+        require_image = bool(options["require_image"])
+        self.stdout.write(
+            f"Import: {input_path} ({total} yozuv), "
+            + ("rasm majburiy" if require_image else "rasm ixtiyoriy — barcha yoziladi")
+        )
 
         state_path = base / options["state_file"]
         allow_static = not options["no_static_map"] and bool(
@@ -70,7 +79,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 "Rasm fallback: OSM/Wikidata yo'q bo'lsa Yandex static xarita ishlatiladi"
             )
-        else:
+        elif require_image:
             self.stdout.write(
                 self.style.WARNING(
                     "Faqat OSM/Wikidata rasmlari — ko'p yozuvlar o'tkazib yuborilishi mumkin"
@@ -89,8 +98,9 @@ class Command(BaseCommand):
         stats = import_yandex_facilities_json(
             input_path,
             download_images=True,
-            require_image=True,
+            require_image=require_image,
             allow_static_map_fallback=allow_static,
+            skip_without_image=require_image,
             dry_run=options["dry_run"],
             limit=options["limit"],
             offset=options["offset"],

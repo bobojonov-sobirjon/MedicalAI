@@ -129,6 +129,7 @@ def _upsert_facility_row(
     allow_static_map_fallback: bool,
     image_session: requests.Session,
     stats: YandexImportStats,
+    skip_without_image: bool = True,
 ) -> bool:
     kind = _normalize_kind(row.get("kind") or "")
     city_name = pick_city_name_for_facility_row(
@@ -216,25 +217,30 @@ def _upsert_facility_row(
             allow_static_map_fallback=allow_static_map_fallback,
         )
         if not image_url:
-            stats.skipped += 1
-            stats.skipped_no_image += 1
-            return False
-
-        downloaded = download_facility_image(image_url, session=image_session)
-        if not downloaded:
-            stats.skipped += 1
-            stats.image_errors += 1
-            if require_image:
+            # Нет источника картинки. Если разрешено — импортируем без картинки.
+            if skip_without_image:
+                stats.skipped += 1
                 stats.skipped_no_image += 1
-            return False
-
-        content, ext = downloaded
-        image_dir = (external_source or "facility").strip() or "facility"
-        facility.image.save(f"{image_dir}/{external_id}{ext}", ContentFile(content), save=False)
-        stats.images_saved += 1
-        row["resolved_image_url"] = image_url
-        row["resolved_image_source"] = image_source
-    elif require_image and created and not facility.image:
+                return False
+            stats.skipped_no_image += 1
+        else:
+            downloaded = download_facility_image(image_url, session=image_session)
+            if not downloaded:
+                # Скачивание не удалось (rate-limit/сеть). Не выбрасываем учреждение,
+                # если skip_without_image=False — карту нарисует клиент по lat/lon.
+                stats.image_errors += 1
+                if skip_without_image:
+                    stats.skipped += 1
+                    stats.skipped_no_image += 1
+                    return False
+            else:
+                content, ext = downloaded
+                image_dir = (external_source or "facility").strip() or "facility"
+                facility.image.save(f"{image_dir}/{external_id}{ext}", ContentFile(content), save=False)
+                stats.images_saved += 1
+                row["resolved_image_url"] = image_url
+                row["resolved_image_source"] = image_source
+    elif require_image and created and not facility.image and skip_without_image:
         stats.skipped += 1
         stats.skipped_no_image += 1
         return False
@@ -253,6 +259,7 @@ def import_yandex_facilities_json(
     download_images: bool = True,
     require_image: bool = False,
     allow_static_map_fallback: bool = True,
+    skip_without_image: bool = True,
     dry_run: bool = False,
     limit: int = 0,
     offset: int = 0,
@@ -307,6 +314,7 @@ def import_yandex_facilities_json(
                         allow_static_map_fallback=allow_static_map_fallback,
                         image_session=session,
                         stats=stats,
+                        skip_without_image=skip_without_image,
                     )
                 if saved and external_id and resume_state_path:
                     imported_ids.add(external_id)

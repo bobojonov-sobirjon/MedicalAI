@@ -151,7 +151,18 @@ class CityListView(APIView):
 def _facility_image_url(request, obj: "MedicalFacility") -> str | None:
     from apps.core.media_urls import file_field_url
 
-    return file_field_url(request, obj.image if getattr(obj, "image", None) else None)
+    stored = file_field_url(request, obj.image if getattr(obj, "image", None) else None)
+    if stored:
+        return stored
+    # Нет сохранённой картинки — отдаём статичную карту по координатам (как в списке аптек).
+    if obj.latitude is not None and obj.longitude is not None:
+        from apps.medic.importers.facility_image_resolver import yandex_static_map_url
+
+        try:
+            return yandex_static_map_url(obj.latitude, obj.longitude)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _facility_map_url(obj: "MedicalFacility") -> str | None:
