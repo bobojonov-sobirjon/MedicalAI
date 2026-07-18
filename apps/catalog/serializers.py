@@ -45,7 +45,7 @@ class DiseaseDetailSerializer(serializers.ModelSerializer):
         return description_preview(obj.description)
 
     def get_drugs(self, obj: Disease) -> list:
-        qs = obj.drugs.all().order_by("name")[:80]
+        qs = obj.drugs.filter(is_active=True).order_by("name")[:80]
         return DrugMiniPublicSerializer(qs, many=True, context=self.context).data
 
 

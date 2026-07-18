@@ -126,7 +126,7 @@ class PublicDrugListView(APIView):
             limit = min(int(request.query_params.get("limit") or 500), 2000)
         except (TypeError, ValueError):
             limit = 500
-        qs = Drug.objects.prefetch_related("diseases").all().order_by("name")
+        qs = Drug.objects.prefetch_related("diseases").filter(is_active=True).order_by("name")
         if q:
             qs = qs.filter(Q(name__icontains=q))
         return Response(DrugSerializer(qs[:limit], many=True, context={"request": request}).data)

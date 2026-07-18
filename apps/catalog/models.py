@@ -66,6 +66,11 @@ class Drug(TimeStampedModel):
     )
     dosage = models.CharField("Дозировка", max_length=255, blank=True, default="")
     image = models.ImageField("Изображение", upload_to="drugs/", blank=True, null=True)
+    is_active = models.BooleanField(
+        "Показывать в приложении",
+        default=True,
+        help_text="Снимите галочку, чтобы скрыть препарат (напр. мусорные импортированные записи).",
+    )
     diseases = models.ManyToManyField(
         Disease,
         verbose_name="Можно лечить",

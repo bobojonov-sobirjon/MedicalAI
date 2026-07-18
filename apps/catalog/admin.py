@@ -25,9 +25,22 @@ class BodyPartAdmin(admin.ModelAdmin):
 
 @admin.register(Drug)
 class DrugAdmin(admin.ModelAdmin):
-    list_display = ("name", "dosage", "rating", "created_at", "updated_at")
+    list_display = ("name", "is_active", "dosage", "rating", "updated_at")
+    list_filter = ("is_active",)
+    list_editable = ("is_active",)
     search_fields = ("name", "dosage")
     filter_horizontal = ("diseases",)
+    actions = ("make_active", "make_inactive")
+
+    @admin.action(description="Показывать в приложении (is_active=True)")
+    def make_active(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Показано препаратов: {updated}")
+
+    @admin.action(description="Скрыть из приложения (is_active=False)")
+    def make_inactive(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f"Скрыто препаратов: {updated}")
 
 
 @admin.register(DrugViewLog)
