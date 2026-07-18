@@ -225,14 +225,17 @@ class Command(BaseCommand):
                     "Используйте --only address, либо --provider yandex с платным ключом."
                 )
             need_contacts = False
-            if options["delay"] < 1.0:
-                options["delay"] = 1.1  # соблюдаем usage policy Nominatim (<=1 req/s)
+            # Nominatim policy: не чаще 1 запроса/сек. Ниже выдерживаем интервал
+            # между НАЧАЛАМИ запросов, а не добавляем секунду после ответа.
+            nominatim_interval = max(1.05, options["delay"])
             self.stdout.write(
                 self.style.WARNING(
                     "provider=nominatim: заполняем ТОЛЬКО адрес (бесплатно). "
                     "Телефон/часы требуют платного Yandex-ключа."
                 )
             )
+        if provider != "nominatim":
+            nominatim_interval = 0.0
 
         qs = MedicalFacility.objects.select_related("city").filter(
             latitude__isnull=False,
@@ -264,6 +267,7 @@ class Command(BaseCommand):
         session = _session()
         processed = changed = addresses = phones = hours = matched = 0
         for facility in qs.iterator(chunk_size=100):
+            request_started = time.monotonic()
             processed += 1
             update_fields: list[str] = []
             place = None
@@ -315,7 +319,14 @@ class Command(BaseCommand):
                     f"processed={processed} changed={changed} address=+{addresses} "
                     f"phone=+{phones} hours=+{hours} place_match={matched}"
                 )
-            if options["delay"] > 0:
+            if provider == "nominatim":
+                # Ответ API обычно занимает 0.3–0.8 сек; ждём только остаток
+                # интервала. Это заметно быстрее и всё ещё <= 1 request/sec.
+                elapsed = time.monotonic() - request_started
+                remaining = nominatim_interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+            elif options["delay"] > 0:
                 time.sleep(options["delay"])
 
         if options["apply"] and options["resume"]:
