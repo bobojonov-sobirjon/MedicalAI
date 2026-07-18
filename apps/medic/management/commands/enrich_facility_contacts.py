@@ -1,4 +1,10 @@
-"""Fill missing facility address/phone/hours from validated Yandex results."""
+"""Fill missing facility address/phone/hours.
+
+Providers:
+  • nominatim (FREE, no key) — только адрес по координатам (OSM Nominatim);
+  • yandex (нужен платный ключ) — адрес + телефон + часы работы.
+Существующие значения никогда не перезаписываются.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +15,7 @@ import time
 from difflib import SequenceMatcher
 from pathlib import Path
 
+import requests
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
@@ -23,6 +30,9 @@ from apps.medic.importers.yandex_maps_parser import (
     yandex_search_api_key,
 )
 from apps.medic.models import MedicalFacility
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_UA = "MedicAI-FacilityEnrich/1.0 (+https://medic-ai.ru)"
 
 
 _NON_WORD_RE = re.compile(r"[^0-9a-zа-яё]+", re.IGNORECASE)
@@ -55,6 +65,52 @@ def _name_score(left: str, right: str) -> float:
     if a in b or b in a:
         return 0.88
     return SequenceMatcher(None, a, b).ratio()
+
+
+def _reverse_address_nominatim(session, *, lat: float, lon: float) -> str:
+    """Бесплатный reverse-geocode через OSM Nominatim (лимит ~1 запрос/сек)."""
+    try:
+        response = session.get(
+            NOMINATIM_URL,
+            params={
+                "format": "jsonv2",
+                "lat": f"{lat}",
+                "lon": f"{lon}",
+                "zoom": 18,
+                "addressdetails": 1,
+                "accept-language": "ru",
+            },
+            headers={"User-Agent": NOMINATIM_UA},
+            timeout=30,
+        )
+        if response.status_code == 429:
+            time.sleep(2.0)
+            return ""
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        return ""
+
+    addr = data.get("address") or {}
+    road = addr.get("road") or addr.get("pedestrian") or addr.get("footway") or ""
+    house = addr.get("house_number") or ""
+    city = (
+        addr.get("city")
+        or addr.get("town")
+        or addr.get("village")
+        or addr.get("municipality")
+        or ""
+    )
+    parts: list[str] = []
+    if road and house:
+        parts.append(f"{road}, {house}")
+    elif road:
+        parts.append(road)
+    if city and city not in parts:
+        parts.append(city)
+    if parts:
+        return ", ".join(parts)[:512]
+    return str(data.get("display_name") or "").strip()[:512]
 
 
 def _reverse_address(session, *, api_key: str, lat: float, lon: float) -> str:
@@ -127,13 +183,19 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true", help="Save changes (default: dry-run).")
+        parser.add_argument(
+            "--provider",
+            choices=("nominatim", "yandex"),
+            default="nominatim",
+            help="nominatim=БЕСПЛАТНО, только адрес. yandex=адрес+телефон+часы (нужен платный ключ).",
+        )
         parser.add_argument("--city", default="", help="Only this city name.")
         parser.add_argument("--kind", choices=("pharmacy", "hospital"), default="")
         parser.add_argument("--source", default="osm", help="DB external_source (default: osm).")
         parser.add_argument("--only", choices=("all", "address", "contacts"), default="all")
         parser.add_argument("--limit", type=int, default=100)
         parser.add_argument("--offset", type=int, default=0)
-        parser.add_argument("--delay", type=float, default=0.25)
+        parser.add_argument("--delay", type=float, default=0.0, help="Задержка, сек (nominatim: минимум 1.0).")
         parser.add_argument(
             "--state-file",
             default="data/cache/facility_enrichment_state.json",
@@ -141,15 +203,36 @@ class Command(BaseCommand):
         parser.add_argument("--resume", action="store_true")
 
     def handle(self, *args, **options):
+        provider = options["provider"]
         only = options["only"]
         need_address = only in {"all", "address"}
         need_contacts = only in {"all", "contacts"}
-        geocoder_key = yandex_geocoder_api_key() if need_address else ""
-        search_key = yandex_search_api_key() if need_contacts else ""
-        if need_address and not geocoder_key:
-            raise CommandError("YANDEX_GEOCODER_API_KEY (yoki YANDEX_MAPS_API_KEY) sozlanmagan.")
-        if need_contacts and not search_key:
-            raise CommandError("YANDEX_MAPS_API_KEY sozlanmagan (telefon/rejim uchun Geosearch kerak).")
+
+        geocoder_key = ""
+        search_key = ""
+        if provider == "yandex":
+            geocoder_key = yandex_geocoder_api_key() if need_address else ""
+            search_key = yandex_search_api_key() if need_contacts else ""
+            if need_address and not geocoder_key:
+                raise CommandError("YANDEX_GEOCODER_API_KEY (yoki YANDEX_MAPS_API_KEY) sozlanmagan.")
+            if need_contacts and not search_key:
+                raise CommandError("YANDEX_MAPS_API_KEY sozlanmagan (telefon/rejim uchun Geosearch kerak).")
+        else:
+            # Nominatim — бесплатно, но только адрес.
+            if need_contacts and only == "contacts":
+                raise CommandError(
+                    "provider=nominatim телефон/часы не умеет. "
+                    "Используйте --only address, либо --provider yandex с платным ключом."
+                )
+            need_contacts = False
+            if options["delay"] < 1.0:
+                options["delay"] = 1.1  # соблюдаем usage policy Nominatim (<=1 req/s)
+            self.stdout.write(
+                self.style.WARNING(
+                    "provider=nominatim: заполняем ТОЛЬКО адрес (бесплатно). "
+                    "Телефон/часы требуют платного Yandex-ключа."
+                )
+            )
 
         qs = MedicalFacility.objects.select_related("city").filter(
             latitude__isnull=False,
@@ -201,12 +284,19 @@ class Command(BaseCommand):
             if need_address and not facility.address:
                 address = str((place or {}).get("address") or "").strip()
                 if not address:
-                    address = _reverse_address(
-                        session,
-                        api_key=geocoder_key,
-                        lat=float(facility.latitude),
-                        lon=float(facility.longitude),
-                    )
+                    if provider == "nominatim":
+                        address = _reverse_address_nominatim(
+                            session,
+                            lat=float(facility.latitude),
+                            lon=float(facility.longitude),
+                        )
+                    else:
+                        address = _reverse_address(
+                            session,
+                            api_key=geocoder_key,
+                            lat=float(facility.latitude),
+                            lon=float(facility.longitude),
+                        )
                 if address:
                     facility.address = address[:512]
                     update_fields.append("address")
