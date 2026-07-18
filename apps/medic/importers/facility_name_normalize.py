@@ -37,6 +37,14 @@ GENERIC_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Похоже на номер дома, а не название: «25а», «12б», «7к1», «25/1», «7-1», «25 стр3».
+# Такие значения — это addr:housenumber, попавший в name, а не бренд.
+HOUSE_NUMBER_RE = re.compile(
+    r"^\d{1,4}\s*[а-яёa-z]?\s*"
+    r"(?:[/\-]\s*\d{1,4}\s*[а-яёa-z]?|(?:к|корп|стр|лит)\.?\s*\d{0,3}\s*[а-яёa-z]?)?$",
+    re.IGNORECASE,
+)
+
 
 AUTO_KIND_PREFIX_RE = re.compile(
     r"^(?:аптека|больница|медучреждение|аптечный пункт)\s*—\s*",
@@ -61,8 +69,11 @@ def is_weak_facility_name(name: str) -> bool:
         return True
     if WEAK_NAME_RE.match(label):
         return True
-    # "21 Плюс", "03 Life" — raqam + brend, qoldiramiz
-    if re.match(r"^\d{1,4}\s*\+?\s*[A-Za-zА-Яа-яЁё]", label):
+    # Номер дома («25а», «7к1», «25/1») — это не название
+    if HOUSE_NUMBER_RE.match(label):
+        return True
+    # "21 Плюс", "03 Life" — число + НАСТОЯЩЕЕ слово (≥2 букв), оставляем
+    if re.match(r"^\d{1,4}\s*\+?\s*[A-Za-zА-Яа-яЁё]{2,}", label):
         return False
     # "Аптека 5+" — faqat raqam/belgi qolgan
     stripped = GENERIC_PREFIX_RE.sub("", label).strip(" .,-№#+")
