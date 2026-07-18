@@ -94,8 +94,18 @@ class Command(BaseCommand):
             f"  JSON unikal ID: {len(json_ext_ids)} | DB da bor: {len(json_ext_ids) - len(missing_ids)} | yo'q: {len(missing_ids)}"
         )
 
+        # dedupe_facilities birlashtirgan dublikatlar tabiiy ravishda "yo'q" bo'lib ko'rinadi.
+        # Kichik farq (< 1%) — bu dublikatlar, qayta import kerak emas (aks holda halqa).
+        dup_threshold = max(200, int(len(json_ext_ids) * 0.01)) if json_ext_ids else 0
         if json_ext_ids and not missing_ids:
             self.stdout.write(self.style.SUCCESS("  IMPORT: TUGAGAN (JSON dagi barcha ID DB da bor)"))
+        elif missing_ids and len(missing_ids) <= dup_threshold:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  IMPORT: TUGAGAN — {len(missing_ids)} ta ID dublikat sifatida "
+                    f"birlashtirilgan (dedupe). Qayta import KERAK EMAS."
+                )
+            )
         elif missing_ids:
             self.stdout.write(
                 self.style.WARNING(
@@ -115,5 +125,5 @@ class Command(BaseCommand):
         self.stdout.write("Qayta davom ettirish:")
         if total_regions and done_count < total_regions:
             self.stdout.write("  python manage.py parse_osm_facilities --all-regions --resume")
-        if missing_ids:
+        if missing_ids and len(missing_ids) > dup_threshold:
             self.stdout.write("  python manage.py import_osm_facilities --no-images")

@@ -207,6 +207,18 @@ class FacilityListView(APIView):
                 required=False,
                 description="Лимит (по умолчанию 500, максимум 2000)",
             ),
+            OpenApiParameter(
+                name="lat",
+                type=float,
+                required=False,
+                description="Широта пользователя — сортировка по близости (ближайшие сверху).",
+            ),
+            OpenApiParameter(
+                name="lon",
+                type=float,
+                required=False,
+                description="Долгота пользователя — вместе с lat сортирует по близости.",
+            ),
         ],
     )
     def get(self, request):
@@ -218,11 +230,42 @@ class FacilityListView(APIView):
         except (TypeError, ValueError):
             limit = 500
 
+        def _parse_coord(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        lat0 = _parse_coord(request.query_params.get("lat"))
+        lon0 = _parse_coord(request.query_params.get("lon"))
+
         qs = MedicalFacility.objects.filter(is_active=True).select_related("city")
         if kind in ("pharmacy", "hospital"):
             qs = qs.filter(kind=kind)
         if city_id and str(city_id).isdigit():
             qs = qs.filter(city_id=int(city_id))
+
+        near_sorted = False
+        if lat0 is not None and lon0 is not None and not q:
+            from django.db.models import ExpressionWrapper, F, FloatField
+            from django.db.models.functions import Cast
+
+            lat_f = Cast("latitude", FloatField())
+            lon_f = Cast("longitude", FloatField())
+            # Приближённое квадрат-расстояние (для сортировки внутри города достаточно).
+            qs = (
+                qs.filter(latitude__isnull=False, longitude__isnull=False)
+                .annotate(
+                    _dist=ExpressionWrapper(
+                        (lat_f - lat0) * (lat_f - lat0)
+                        + (lon_f - lon0) * (lon_f - lon0) * 0.34,
+                        output_field=FloatField(),
+                    )
+                )
+                .order_by("_dist")
+            )
+            near_sorted = True
+
         if q:
             from django.db.models import Case, IntegerField, Value, When
 
@@ -252,7 +295,7 @@ class FacilityListView(APIView):
                     output_field=IntegerField(),
                 )
             ).order_by("_rank", "name")
-        else:
+        elif not near_sorted:
             qs = qs.order_by("name")
 
         data = [
