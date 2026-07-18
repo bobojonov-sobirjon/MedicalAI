@@ -163,7 +163,9 @@ def _upsert_facility_row(
         external_source=external_source,
         external_id=external_id,
     ).first()
-    if existing is None:
+    if existing is None and address:
+        # Fallback-dedup faqat address BO'SH BO'LMAGANDA. Aks holda bir shahardagi
+        # bir xil nomli (masalan "Живика") barcha aptekalar bitta qatorga birlashib ketadi.
         existing = MedicalFacility.objects.filter(
             kind=kind,
             city=city,

@@ -78,30 +78,32 @@ class Command(BaseCommand):
             f"shifoxona: {db_qs.filter(kind=MedicalFacility.Kind.HOSPITAL).count()}"
         )
 
-        if json_count and db_total >= json_count:
-            self.stdout.write(self.style.SUCCESS("  IMPORT: TUGAGAN (JSON dagi hammasi DB da)"))
-        elif json_count and len(imported_ids) >= json_count and db_total < json_count:
-            ghost = len(imported_ids) - db_total
-            self.stdout.write(
-                self.style.ERROR(
-                    f"  IMPORT STATE BUZILGAN: state={len(imported_ids)}, DB={db_total} "
-                    f"(~{ghost} ID state da bor, lekin DB da yo'q). "
-                    f"--resume hech narsa qilmaydi!"
-                )
-            )
+        # Haqiqiy tekshiruv: JSON dagi external_id lardan qanchasi DB da YO'Q.
+        # (state/db son solishtirish noto'g'ri — JSON da dublikatlar bor.)
+        json_ext_ids: set[str] = set()
+        if json_path.exists():
+            for row in load_facilities_json(json_path):
+                ext = str(row.get("external_id") or "").strip()
+                if ext:
+                    json_ext_ids.add(ext)
+        db_ext_ids = set(
+            db_qs.exclude(external_id="").values_list("external_id", flat=True)
+        )
+        missing_ids = json_ext_ids - db_ext_ids if json_ext_ids else set()
+        self.stdout.write(
+            f"  JSON unikal ID: {len(json_ext_ids)} | DB da bor: {len(json_ext_ids) - len(missing_ids)} | yo'q: {len(missing_ids)}"
+        )
+
+        if json_ext_ids and not missing_ids:
+            self.stdout.write(self.style.SUCCESS("  IMPORT: TUGAGAN (JSON dagi barcha ID DB da bor)"))
+        elif missing_ids:
             self.stdout.write(
                 self.style.WARNING(
-                    "  Tuzatish:\n"
-                    "    python manage.py sync_osm_import_state\n"
-                    "    python manage.py import_osm_facilities --resume"
-                )
-            )
-        elif json_count and db_total > 0:
-            left = max(json_count - len(imported_ids), json_count - db_total)
-            self.stdout.write(
-                self.style.WARNING(
-                    f"  IMPORT: TO'LIQ EMAS — taxminan {left}+ yozuv qolgan "
-                    f"(JSON {json_count}, DB {db_total})"
+                    f"  IMPORT: TO'LIQ EMAS — {len(missing_ids)} ta ID DB da yo'q.\n"
+                    "  To'liq qayta yuklang (--resume EMAS, state buni o'tkazib yuboradi):\n"
+                    "    python manage.py import_osm_facilities --no-images\n"
+                    "    python manage.py dedupe_facilities\n"
+                    "    python manage.py sync_osm_import_state"
                 )
             )
         elif json_count and db_total == 0:
@@ -113,6 +115,5 @@ class Command(BaseCommand):
         self.stdout.write("Qayta davom ettirish:")
         if total_regions and done_count < total_regions:
             self.stdout.write("  python manage.py parse_osm_facilities --all-regions --resume")
-        if json_count and db_total < json_count:
-            self.stdout.write("  python manage.py sync_osm_import_state")
-            self.stdout.write("  python manage.py import_osm_facilities --resume")
+        if missing_ids:
+            self.stdout.write("  python manage.py import_osm_facilities --no-images")
