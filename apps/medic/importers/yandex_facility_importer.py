@@ -21,6 +21,7 @@ from .geo_importer import _get_or_create_city, _normalize_kind
 from .city_normalize import pick_city_name_for_facility_row
 from .facilities_json import load_facilities_json
 from .facility_image_resolver import resolve_facility_image_url
+from .facility_name_normalize import pick_facility_name_from_row
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,10 @@ def _upsert_facility_row(
         row,
         region_fallback=str(row.get("region_name") or ""),
     )
-    name = (row.get("name") or "").strip()
+    # Пересчитываем имя из сохранённых osm-тегов текущей (исправленной) логикой,
+    # чтобы номера домов «25а», «24» превратились в адрес/город, а не остались именем.
+    row_kind = "pharmacy" if kind == MedicalFacility.Kind.PHARMACY else "hospital"
+    name = pick_facility_name_from_row(row, kind=row_kind) or (row.get("name") or "").strip()
     external_source = (row.get("external_source") or "yandex").strip()
     external_id = str(row.get("external_id") or "").strip()
 
