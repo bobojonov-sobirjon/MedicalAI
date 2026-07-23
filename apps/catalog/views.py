@@ -128,7 +128,18 @@ class PublicDrugListView(APIView):
             limit = 500
         qs = Drug.objects.prefetch_related("diseases").filter(is_active=True).order_by("name")
         if q:
-            qs = qs.filter(Q(name__icontains=q))
+            from django.db.models import Case, IntegerField, Value, When
+
+            # Ищем по торговому названию и по тексту (МНН из ГРЛС часто в description).
+            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q)).annotate(
+                _rank=Case(
+                    When(name__iexact=q, then=Value(0)),
+                    When(name__istartswith=q, then=Value(1)),
+                    When(name__icontains=q, then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                )
+            ).order_by("_rank", "name")
         return Response(DrugSerializer(qs[:limit], many=True, context={"request": request}).data)
 
 

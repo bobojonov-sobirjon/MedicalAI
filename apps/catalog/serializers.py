@@ -21,14 +21,39 @@ class DrugMiniPublicSerializer(serializers.ModelSerializer):
     """Краткая карточка препарата внутри заболевания (2 строки + Далее на клиенте)."""
 
     description_preview = serializers.SerializerMethodField()
+    in_my_cabinet = serializers.SerializerMethodField()
 
     class Meta:
         model = Drug
-        fields = ("id", "name", "description", "description_preview", "dosage", "image", "rating")
+        fields = (
+            "id",
+            "name",
+            "description",
+            "description_preview",
+            "dosage",
+            "image",
+            "rating",
+            "in_my_cabinet",
+        )
 
     def get_description_preview(self, obj: Drug) -> str:
         # Клиент показывает 1–2 строки; полное описание — на экране лекарства по id.
         return description_preview(obj.description, max_chars=140)
+
+    def get_in_my_cabinet(self, obj: Drug) -> bool:
+        request = self.context.get("request")
+        if not request or not getattr(request.user, "is_authenticated", False):
+            return False
+        # Один запрос на весь вложенный список, а не запрос на каждый препарат.
+        cache_key = "_cabinet_drug_ids"
+        if cache_key not in self.context:
+            from apps.cabinet.models import CabinetItem
+
+            self.context[cache_key] = set(
+                CabinetItem.objects.filter(user=request.user, drug_id__isnull=False)
+                .values_list("drug_id", flat=True)
+            )
+        return obj.pk in self.context[cache_key]
 
 
 class DiseaseDetailSerializer(serializers.ModelSerializer):
