@@ -3,6 +3,61 @@ from __future__ import annotations
 import re
 
 _PREVIEW_SENTENCE_RE = re.compile(r"(?<=[.!?…])\s+")
+_LATIN_BRACKET_RE = re.compile(r"\s*\[[^\[\]]*[A-Za-z][^\[\]]*\]")
+_PAREN_RE = re.compile(r"\s*\(([^)]*)\)")
+_MNN_RE = re.compile(r"МНН:\s*([^.\n;]+)", re.IGNORECASE)
+_LATIN_ONLY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9\s\-/',.+]*$")
+
+
+def clean_disease_display_name(name: str) -> str:
+    """Убрать английские пояснения вида [herpes simplex], оставить коды МКБ (G05.1*)."""
+    raw = re.sub(r"\s+", " ", (name or "").strip())
+    if not raw:
+        return ""
+    cleaned = _LATIN_BRACKET_RE.sub("", raw)
+
+    def _keep_or_drop_paren(match: re.Match[str]) -> str:
+        inner = (match.group(1) or "").strip()
+        if not inner:
+            return ""
+        # Коды МКБ / с цифрами — оставляем.
+        if re.search(r"\d", inner):
+            return match.group(0)
+        if re.search(r"[А-Яа-яЁё]", inner):
+            return match.group(0)
+        if _LATIN_ONLY_RE.match(inner):
+            return ""
+        return match.group(0)
+
+    cleaned = _PAREN_RE.sub(_keep_or_drop_paren, cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,;—–-")
+    return cleaned if cleaned else raw
+
+
+def extract_drug_mnn(description: str) -> str:
+    """Достать МНН из описания ГРЛС: 'МНН: Валацикловир. ...'."""
+    match = _MNN_RE.search(description or "")
+    if not match:
+        return ""
+    return re.sub(r"\s+", " ", match.group(1)).strip().casefold()
+
+
+def split_mnn_parts(mnn: str) -> list[str]:
+    """Разбить комбо-МНН: 'метформин+глибенкламид' → ['метформин', 'глибенкламид']."""
+    raw = (mnn or "").casefold().strip()
+    if not raw:
+        return []
+    parts = re.split(r"[+/;,|]+|\s+и\s+", raw)
+    out: list[str] = []
+    for part in parts:
+        part = re.sub(r"\s+", " ", part).strip(" .")
+        if len(part) < 3:
+            continue
+        # Убрать дозировки вида «500 мг»
+        part = re.sub(r"\b\d+[.,]?\d*\s*(мг|г|мл|%|ме)\b", "", part, flags=re.I).strip()
+        if len(part) >= 3:
+            out.append(part)
+    return out or ([raw] if len(raw) >= 3 else [])
 
 
 def description_preview(text: str, *, max_chars: int = 320) -> str:

@@ -1,0 +1,1105 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+
+<script type="text/javascript">
+        document.language = 'ru'
+        document.shortDatePattern = 'dd.MM.yyyy'
+        document.shortClientDatePattern = function (shortDatePattern) {
+            if (!shortDatePattern)
+                return 'dd.mm.yy';
+            return shortDatePattern
+                .toLowerCase()
+                .replace('mmm', 'M')
+                .replace(/mm/g, 'm')
+                .replace(/dd/g, 'd')
+                .replace(/yy/g, 'y')
+        } (document.shortDatePattern)
+</script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=EmulateIE9" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link href="/css/font-awesome.min.css" rel="stylesheet" type="text/css" />
+        <link href="/css/masterpage-global.css?ver=482908771" rel="stylesheet" type="text/css" />
+        <link href="/css/masterpage-aspx.css?ver=482908771" rel="stylesheet" type="text/css" />
+        <link href="/css/masterpage-aspx-new.css?ver=482908771" rel="stylesheet" type="text/css" />
+    
+    
+    <script src="/js/jquery-2.1.0.min.js" type="text/javascript"></script>
+
+    <link href="/gfx/mzrf.svg" rel="shortcut icon" /><title>
+	Государственный реестр лекарственных средств
+</title>
+    <link href="css/jquery-ui-1.12.1.custom.css" type="text/css" rel="stylesheet" />
+    <link href="css/typeahead.css" rel="Stylesheet" />
+    <link href="css/jquery.multiselect.filter.css" type="text/css" rel="Stylesheet" />
+    <link href="css/jquery.multiselect.css" type="text/css" rel="Stylesheet" />
+    <style type="text/css">
+        .ui-multiselect {
+            font-family: Verdana;
+            font-size: 8pt;
+            height: 20px;
+        }
+
+        .h_out {
+            height: 26px;
+        }
+
+        .h_in {
+            height: 18px;
+        }
+
+        .m-4 {
+            margin: 4px;
+        }
+
+        .tt-dropdown-menu {
+            width: 420px;
+        }
+    </style>
+</head>
+
+<body class="page-reestr">    
+    <form method="post" action="./GRLS.aspx" id="aspnetForm">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="JkNFPYsPt+L9HtvQt18BHG17VsKHoYgLY3Ew2sd2Vqfv920RWCQZtrIY6mPFLvLz0X3IA9w4qb9E6TYaECxZspwRSK4CtoQW0walWbvl8d4KhQ6Hk9mwka3/vLihPkncvGi9l8kU/EZoXtQ1dqk/bd+dP7h7H6tfS/EdMya0JnThUdD+vzgy3nhcKLxYMxmkRWBy78RSJqfm4iZcDOOM7CicgNIoGPjzo/5SSEnkbrg=" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['aspnetForm'];
+if (!theForm) {
+    theForm = document.aspnetForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZKS-DaZoft_rarQAFGcCkHqh0DMjMcmJfjY9NVTXAhVo8aSA5qlqLBch8SraTwjbKQ2&amp;t=638201308859350238" type="text/javascript"></script>
+
+
+<script type="text/javascript">
+//<![CDATA[
+var __cultureInfo = {"name":"ru-RU","numberFormat":{"CurrencyDecimalDigits":2,"CurrencyDecimalSeparator":",","IsReadOnly":true,"CurrencyGroupSizes":[3],"NumberGroupSizes":[3],"PercentGroupSizes":[3],"CurrencyGroupSeparator":" ","CurrencySymbol":"₽","NaNSymbol":"не число","CurrencyNegativePattern":8,"NumberNegativePattern":1,"PercentPositivePattern":1,"PercentNegativePattern":1,"NegativeInfinitySymbol":"-∞","NegativeSign":"-","NumberDecimalDigits":2,"NumberDecimalSeparator":",","NumberGroupSeparator":" ","CurrencyPositivePattern":3,"PositiveInfinitySymbol":"∞","PositiveSign":"+","PercentDecimalDigits":2,"PercentDecimalSeparator":",","PercentGroupSeparator":" ","PercentSymbol":"%","PerMilleSymbol":"‰","NativeDigits":["0","1","2","3","4","5","6","7","8","9"],"DigitSubstitution":1},"dateTimeFormat":{"AMDesignator":"","Calendar":{"MinSupportedDateTime":"\/Date(-62135596800000)\/","MaxSupportedDateTime":"\/Date(253402289999999)\/","AlgorithmType":1,"CalendarType":1,"Eras":[1],"TwoDigitYearMax":2029,"IsReadOnly":true},"DateSeparator":".","FirstDayOfWeek":1,"CalendarWeekRule":0,"FullDateTimePattern":"d MMMM yyyy \u0027г.\u0027 H:mm:ss","LongDatePattern":"d MMMM yyyy \u0027г.\u0027","LongTimePattern":"H:mm:ss","MonthDayPattern":"d MMMM","PMDesignator":"","RFC1123Pattern":"ddd, dd MMM yyyy HH\u0027:\u0027mm\u0027:\u0027ss \u0027GMT\u0027","ShortDatePattern":"dd.MM.yyyy","ShortTimePattern":"H:mm","SortableDateTimePattern":"yyyy\u0027-\u0027MM\u0027-\u0027dd\u0027T\u0027HH\u0027:\u0027mm\u0027:\u0027ss","TimeSeparator":":","UniversalSortableDateTimePattern":"yyyy\u0027-\u0027MM\u0027-\u0027dd HH\u0027:\u0027mm\u0027:\u0027ss\u0027Z\u0027","YearMonthPattern":"MMMM yyyy","AbbreviatedDayNames":["Вс","Пн","Вт","Ср","Чт","Пт","Сб"],"ShortestDayNames":["Вс","Пн","Вт","Ср","Чт","Пт","Сб"],"DayNames":["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"],"AbbreviatedMonthNames":["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек",""],"MonthNames":["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь",""],"IsReadOnly":true,"NativeCalendarName":"григорианский календарь","AbbreviatedMonthGenitiveNames":["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек",""],"MonthGenitiveNames":["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря",""]},"eras":[1,"наша эра",null,0]};//]]>
+</script>
+
+<script src="/ScriptResource.axd?d=sOVOmFHXSG15tJpm_Ov1dlQ7XNy1IDqTHXtPnUacyw9CD7rD2SNKo7aZec-JcpAXW1kydzaFZUrvtVxBhS1keIiNAUb6sRBe9foUnwyiuJ-guTtXMOwwY2JNXKEnkXc7XjkyVQqMTbRjcCtYhRV-cVDHEfyX1Ynjp0zEMvVRauA1&amp;t=ffffffffe6d5a9ac" type="text/javascript"></script>
+<script src="/ScriptResource.axd?d=vFmw-gbGQrDWhSrSn-6FVfgwlUJ10lgjE-IUGtSUH5rWdc2aZG_O2KT3KBo1MhOy4zkPtoDt7NLkPwPGCGiPGfzcndfT4HUrYExQIGkL3RpcwMFrdQPqZGtdpBJluI8Op_j8i9fNTNuhcZZP_rHLtEydCshOfe4In_n3cmVAD741&amp;t=ffffffffe6d5a9ac" type="text/javascript"></script>
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="42297800" />
+	<input type="hidden" name="__VIEWSTATEENCRYPTED" id="__VIEWSTATEENCRYPTED" value="" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="mb3GCJ2Vr+8q9gnPSRidOjw0AyMj46oovn//F1fh+BIiwbfwJFx7RQcWU9GTkS/vtCH84ZJ2hownQ4p/fBi+OypVO5M/5pOnrTcaBujV/UvC7MxV7pR3+pHsufJOUqT001nKKVW8Rnd4b8MylaVdrzVGuWN6kpbeDfnuUdT3szFuioUoU7FLIDxZXIrY2MJ5x6qoMFqZYOPW9Z1hPKqx/I7liSgag33xT75QHpmL5A3izxWAxdk78FOzl2PHVU5b5DSS3iylL/5NAVgE1LaIaNa7uaUT6ehaZLpSG8CK2GbrfumdJJRC7/D60RUZ+NUsb5cAEww0C65PPcuwwSN6KWEl8HdfvBxwhbAc+kdP3DLCzRTw6h/+DrzQ7uet6A+8JVZkAlpL9SJFRAuH29QWF7XQo96KFy5j9xq1SiNZQX7ZleAIttFEmKM3iWtnWJmZK8FRlsdSDe8f3rKZBk/Ov7fA48fOuVzhg5ix5OWbxd9ijqu+WCkDyhsg4gkia2EuOIgb1LZICviFZ0+llHoLJxxk1kym3ZPY8dpPufNSnhE=" />
+</div>
+        
+        <div class="page-main-container has-shadow">
+            
+            <div id="dvLock" class="LockOff"></div>
+            
+            <header class="page-header">
+                
+                <nav class="nav r1_flat">
+                    
+                    <div class="nav-logo" onclick="window.location.href = '/default.aspx'">
+                        <svg class="nav-logo-img poi" xmlns="http://www.w3.org/2000/svg" width="45" height="34" fill="none" stroke="#dc9d21" stroke-width="1.5">
+                            <circle cx="22.5" cy="12" r="10" />
+                            <circle cx="22.5" cy="12" r="5" />
+                            <circle cx="11" cy="22.5" r="10" />
+                            <circle cx="11" cy="22.5" r="5" />
+                            <circle cx="34" cy="22" r="10" />
+                            <circle cx="34" cy="22" r="5" />
+                            <path d="M13 32a10 10 0 0 1 20 0" />
+                        </svg>
+
+                        <strong class="nav-logo-title stb rdark ce">Государственный реестр<br />
+                            лекарственных средств</strong>
+                    </div>
+                    
+                    <div id="ctl00_tdheaddiv2" class="r1_flat is-hidden" name="nav-caption">
+                        <div class="mp-main-top-menu-secondline-header-caption">
+                            <span id="ctl00_headdiv2" class="t01_10 mp-main-top-menu-secondline-header-caption"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="nav-main-menu">
+                        
+
+<div class="mpmm-container g_clearfix">
+
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            >
+
+            <span>
+                ГРЛС
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-1">
+                                    ГРЛС
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-1 mpmm-em"
+                                    href="../GRLS.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        ГРЛС
+                                    </div>
+
+                                    Государственный реестр лекарственных средств
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-1 "
+                                    href="../StatementRUInfo.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-bar-chart color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Информация, связ. с рег.
+                                    </div>
+
+                                    Информация, связанная с осуществлением государственной регистрации
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-10">
+                                    Аттестация уполн. лиц производителя ЛС
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-10 mpmm-em"
+                                    href="../StatementAcrOrgPersons.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр аттест. лиц
+                                    </div>
+
+                                    Реестр уполномоченных лиц производителя лекарственных средств
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-10 "
+                                    href="../StatementAcrOrgPerson.aspx?persGUID=">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Регистрация уполн. лица
+                                    </div>
+
+                                    Создание заявления на аттестацию уполномоченного лица производителя ЛС
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-2">
+                                    Клинические исследования
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-2 mpmm-em"
+                                    href="../CIPermitionReg.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр РКИ
+                                    </div>
+
+                                    [РКИ] Реестр разрешённых клинических исследований
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-2 "
+                                    href="../CIExperts.aspx?moduleId=2">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр исслед-лей
+                                    </div>
+
+                                    Реестр главных исследователей
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-2">
+                                    Список медицинских организаций
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-2 mpmm-em"
+                                    href="../Ree_orgCI2.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр мед. орг.
+                                    </div>
+
+                                    Сведения об организациях, осуществляющих КИ лек. средств для мед. применения
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-3">
+                                    Предельные цены
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-3 mpmm-em"
+                                    href="../PriceLims.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр пред. цен
+                                    </div>
+
+                                    Государственный реестр предельных отпускных цен
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            >
+
+            <span>
+                БМКП
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-11">
+                                    Регистрация
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-11 mpmm-em"
+                                    href="../bmcp/cp-certificate">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр РУ
+                                    </div>
+
+                                    Реестр РУ
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-2">
+                                    Клинические исследования
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-12 mpmm-em"
+                                    href="../bmcp/cs-certificates">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр PКИ
+                                    </div>
+
+                                    [РКИ] Реестр разрешённых клинических исследований БМКП
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-12 "
+                                    href="../CIExperts.aspx?moduleId=1">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр исслед-лей
+                                    </div>
+
+                                    Реестр главных исследователей БМКП
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-12">
+                                    Аккредитация медицинских организаций
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-12 mpmm-em"
+                                    href="../Ree_orgCI2.aspx?moduleId=1">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр мед. орг.
+                                    </div>
+
+                                    Сведения об организациях, осуществляющих КИ лек. ср-в для мед. применения
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            >
+
+            <span>
+                ЕЭК
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-23">
+                                    Аттестация уполн. лиц производителя ЛС
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-23 mpmm-em"
+                                    href="../StatementAcrOrgPerson.aspx?persGUID=">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Регистрация уполн. лица
+                                    </div>
+
+                                    Создание заявления на аттестацию уполномоченного лица производителя ЛС
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-10 "
+                                    href="../eec/developer-authorized-person/persons">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр аттест. лиц
+                                    </div>
+
+                                    Реестр уполномоченных лиц производителя
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-23 "
+                                    href="../eec/attestation-result/orders">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Реестр приказов
+                                    </div>
+
+                                    Реестр приказов об аттестации
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            >
+
+            <span>
+                РОП
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-1">
+                                    Обращение ЛП (ПП 441)
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-1 mpmm-em"
+                                    href="../PandemicPermissions.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Разрешения
+                                    </div>
+
+                                    Реестр решений об обращении ЛП во время пандемии
+                                </a>
+                                
+                            </div>
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-1">
+                                    Обращение ЛП, признанных дефектурными (ПП 593)
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-1 mpmm-em"
+                                    href="../ImportUnRegPermissions.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Разрешения
+                                    </div>
+
+                                    Разрешения на ввоз незарегистрированных ЛП
+                                </a>
+                                
+                                <a class="mpmm-menu-item color-1 "
+                                    href="../ImportUnRegPermissions.aspx?mode=1">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-list-alt color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Заключения о ввозе ЛП
+                                    </div>
+
+                                    Заключения о ввозе зарегистрированных ЛП
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            >
+
+            <span>
+                Сервис
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-0">
+                                    Общее
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-0 mpmm-em"
+                                    href="../public/org/claim/new">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-users color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Регистрация
+                                    </div>
+
+                                    Формирование заявки на предоставление доступа к БД ГРЛС
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="mpmm-top-item">
+        <a class="mpmm-top-item-link"
+            
+            href="../help.aspx"
+            >
+
+            <span>
+                Справка
+                
+            </span>
+        </a>
+
+        
+        <div class="mp-mm-dropdown">
+            <div class="mp-mm-arrow-cont"></div>
+            <div class="mp-mm-dropdown-cont g_clearfix">
+                <table class="mpmm-layout-tbl">
+                    <tr>
+                        
+                        <td class="mpmm-block">
+                            
+                            <div>
+                                <div class="mpmm-subtitle title-color-0">
+                                    Справка
+                                </div>
+                                
+                                <a class="mpmm-menu-item color-0 mpmm-em"
+                                    href="../help.aspx">
+                                    <div class="mpmm-menu-item-panel">
+                                        <div class="mpmm-menu-item-image" style="vertical-align: middle;">
+                                            <i class="fa fa-info-circle color-white"
+                                                style="width: 100%; font-size: 23px; box-sizing: border-box; text-align: center; margin-top: 3px;"
+                                                aria-hidden="true"></i>
+                                        </div>
+                                        Справка
+                                    </div>
+
+                                    Справка
+                                </a>
+                                
+                            </div>
+                            
+                        </td>
+                        
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+    </div>
+    
+</div>
+
+                    </div>
+                    
+                    <div class="nav-profile">
+                        
+
+<script type="text/javascript">
+    var redirectUrl = "/GRLS.aspx";   
+
+    function doLogin(e) {
+        $(".mpmm-dropdown").css("display", "none");
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+
+        window.loginGrlsUser(redirectUrl).then(undefined, function(error){
+            // alert(error); - значит было закрытие окна
+        });
+
+        return false;
+    }
+</script>
+
+<style>
+    .validation-error {
+        color: red;
+        cursor: default;
+
+        visibility: hidden;
+    }
+
+    #ctl00_fmLogin_FailReason  div {
+        color: red;
+        margin: 0; 
+        padding: 0; 
+        overflow: hidden; 
+        text-wrap: none;
+    }
+
+    #ct100_LoginWait {
+        text-align: center; 
+        display: none;
+    }
+</style>
+
+<div id="ctl00_fmLogin" style="float: right/*height: 100%; min-height: 100%; */">
+    <table style="height: 100%; min-height: 100%;">
+        <tbody>
+            <tr style="vertical-align: middle;">                
+                <td>
+                    
+                </td>
+                <td>
+                    <a id="ctl00_login" href="#" class="btn_flat_red"
+                        onclick="doLogin(event)"
+                        title="Начать работу с порталом ГРЛС">Войти</a>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+
+
+<script>
+    var button = document.querySelector('.to-material-button');
+
+    if (button) {
+        button.addEventListener('click', function(evt) {
+            evt.preventDefault();
+            fetch('/api/account/set-material-sign', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: true,
+                credentials: 'include',
+            }).then(
+                function (res) {
+                    if (res.ok) {
+                        window.location.href = evt.target.href;
+                    }
+                }
+            );
+        });
+    }
+</script>
+
+                    </div>
+                </nav>
+            </header>
+            
+            <div class="important-messages">
+                
+                
+            </div>
+            
+            <div class="page-wrapper">
+                
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl00$plate$sm', 'aspnetForm', [], [], [], 90, 'ctl00');
+//]]>
+</script>
+
+
+    
+
+    <table width="100%" cellpadding="0" cellspacing="0">
+        <tr class="h01 mncap_flow1">
+            <td class="ce">Государственный реестр лекарственных средств
+                <div id="ctl00_plate_btnToCabinetExpert" class="hi_sys" style="cursor: pointer; margin-right: 5px; float: right;"></div>
+                <div id="ctl00_plate_tdzip" class="hi_sys" style="cursor: pointer; padding-right: 5px; float: right;"><button class="btn_flat" onclick="go('GetGRLS.ashx?FileGUID=98cf515c-19b3-413f-b155-ebb57d3f272f&UserReq=1916581'); return false;"><i class="fa fa-file-excel-o fa-lg" aria-hidden="true" title="Загрузите ГРЛС одним файлом (ZIP 18,07 МБ от 23.07.2026 05:03:01)"></i></button></div>
+            </td>
+        </tr>
+    </table>
+    <table width="100%" align="center">
+        <tr class="h_out">
+            <td colspan="2" align="center">
+                <table id="ctl00_plate_isFS" class="stText bld" onchange="showHideOwner();" style="border-style:None;">
+	<tr>
+		<td><input id="ctl00_plate_isFS_0" type="radio" name="ctl00$plate$isFS" value="0" /><label for="ctl00_plate_isFS_0">Лекарственные препараты</label></td><td><input id="ctl00_plate_isFS_1" type="radio" name="ctl00$plate$isFS" value="1" checked="checked" /><label for="ctl00_plate_isFS_1">Фармацевтические субстанции</label></td>
+	</tr>
+</table>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <table align="center">
+                    <tr class="h_out">
+                        <td align="right" style="width: 50%">Номер регистрационного удостоверения / реестровой записи</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$txtRegNm" type="text" id="ctl00_plate_txtRegNm" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">МНН / группировочное (химическое) наименование</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$txtMNN" type="text" maxlength="100" id="ctl00_plate_txtMNN" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">Лекарственная форма</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$LF" type="text" maxlength="100" id="ctl00_plate_LF" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">Торговое наименование</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$txtTorg" type="text" value="Валвир" maxlength="100" id="ctl00_plate_txtTorg" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out only_for_mp">
+                        <td align="right">Наименование держателя / владельца регистрационного удостоверения</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$ownName" type="text" maxlength="100" id="ctl00_plate_ownName" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">Производитель</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$txtMnf" type="text" maxlength="100" id="ctl00_plate_txtMnf" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">Страна</td>
+                        <td align="left" class="tsc1">
+                            <input name="ctl00$plate$txtMnfCountry" type="text" maxlength="100" id="ctl00_plate_txtMnfCountry" class="stText9 bld tbl h_in" style="width:420px;" />
+                        </td>
+                    </tr>
+                    <tr class="h_out">
+                        <td align="right">Состояние
+                        </td>
+                        <td align="left" class="tsc1">
+                            <input type="hidden" name="ctl00$plate$hfRegType" id="ctl00_plate_hfRegType" value="1,6" />
+                            <select name="ctl00$plate$ddlRegType" id="ctl00_plate_ddlRegType" class="stText" multiple="multiple" style="width:408px;border: none;">
+	<option value="1">Действующий</option>
+	<option value="2">Изменённый</option>
+	<option value="3">Исключённый</option>
+	<option value="4">Истёкший</option>
+	<option value="5">Выдано по правилам ЕАЭС</option>
+	<option value="6">Действует, на подтверждении государственной регистрации</option>
+	<option value="7">Приостановлено применение</option>
+	<option value="8">Действует, в иностранных упаковках</option>
+
+</select>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr class="hdr_flat">
+            <td class="ce">Строк на странице
+                <input name="ctl00$plate$txtRecordOnPageCount" type="text" value="100" maxlength="2" id="ctl00_plate_txtRecordOnPageCount" class="Ed10" style="width:25px;" />
+                &nbsp;&nbsp;
+                <input type="submit" name="ctl00$plate$bSeek" value="Найти" id="ctl00_plate_bSeek" class="btn_flat bld m-4" />
+                &nbsp;&nbsp;
+                
+                &nbsp;&nbsp;
+            </td>
+        </tr>
+    </table>
+
+    
+
+    <div>
+
+</div>
+
+    
+
+            </div>
+        </div>
+    </form>
+
+    <script src="/js/masterpage-global.js?ver=1" type="text/javascript"></script>
+    <script src="/js/user-api.js" type="text/javascript"></script>
+
+
+    
+    <script type="text/javascript" src="js/jquery-ui-1.12.0.custom.min.js"></script>
+    <script type="text/javascript" src="js/jquery.multiselect.js"></script>
+    <script type="text/javascript" src="js/typeahead.js"></script>
+    <script type="text/javascript" src="js/hogan.js"></script>
+    <script type="text/javascript" src="js/statement.js"></script>
+    <script type="text/javascript" src="js/statement_jq.js"></script>
+
+    <script type="text/javascript">      
+        function det(routingGuid, isFS) {
+            if (isFS == '1')
+                go('Grls_viewFS_v2.aspx?routingGuid=' + routingGuid);
+            else
+                go('Grls_View_v2.aspx?routingGuid=' + routingGuid);
+        };
+
+        function PrepareTypeahead() {
+            //alias'ы для полей фильтров
+            let manufacturerCountryField = $('#ctl00_plate_txtMnfCountry'); // Страна
+            let lekFormField = $('#ctl00_plate_LF'); // Лекарственная форма
+            let mnnField = $('#ctl00_plate_txtMNN'); // Международное непатентованное наименование
+            let torgNameField = $('#ctl00_plate_txtTorg'); // Торговое наименование
+            let ownerNameField = $('#ctl00_plate_ownName'); // Наименование держателя/владельца РУ
+            let manufacturerField = $('#ctl00_plate_txtMnf'); // Наименование производителя ЛП
+
+
+            //инициализация typeahead'ов
+            var t = manufacturerCountryField.typeahead({
+                name: 'CountryR',
+                remote: {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var isFs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=country_exist&isFs=' + isFs;
+                    }
+                },
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            },
+                {
+                    minLength: 3,
+                    limit: 10
+                } // Второй блок инициализации - обход того, что minLength иначе не работает
+            );
+            t.minLength = 3; t.limit = 10;
+
+            lekFormField.typeahead({
+                minLength: 3, limit: 10, 
+                name: 'FormDos', 
+                remote: {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var isFs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=lekform_grls&isFs=' + isFs;
+                    }
+                }, 
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            });
+
+            mnnField.typeahead({
+                minLength: 3, limit: 10, 
+                name: 'MnnR', 
+                remote:
+                {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var isFs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=mnn_grls&isFs=' + isFs;
+                    }
+                }, 
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            });
+
+            torgNameField.typeahead({
+                minLength: 3, limit: 10, 
+                name: 'TradeNmR', 
+                remote:
+                {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var isFs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=tradename_grls&isFs=' + isFs;
+                    }
+                }, 
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            });
+
+            ownerNameField.typeahead({
+                minLength: 3, limit: 10, 
+                name: 'OrgName', 
+                remote:
+                {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var isFs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=ownername&isFs=' + isFs;
+                    }
+                }, 
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            });
+            manufacturerField.typeahead({
+                minLength: 3, limit: 10, 
+                name: 'Mnf', 
+                remote:
+                {
+                    url: 'Search.ashx?q=%QUERY',
+                    replace: function (url, uriEncodedQuery) {
+                        var fs = $('#ctl00_plate_isFS input[type=radio]:checked').val();
+
+                        return url.replace("%QUERY", uriEncodedQuery) + '&t=manufacturer_grls&isFs=' + fs;
+                    }
+                }, 
+                template: ['<b><p class="stText">{{value}}</p></b>'].join(''), engine: Hogan
+            });
+        }
+
+        // --> Инициализация страницы
+        Sys.WebForms.PageRequestManager.getInstance().add_endRequest(EndRequestHandler);
+        function EndRequestHandler(sender, args) {
+            var s = args.get_response().get_responseData().split('|');
+            if (s[2] == 'ctl00_plate_upGr') {
+                var s = 'table#ctl00_plate_gr'; var g = $('table#ctl00_plate_gr'); if (g.size() == 0) s += 'FS';
+                PrepareSortingGridHeaders(s);
+            };
+
+            PrepareTypeahead();
+
+            initMultiSelectRegType();
+        };
+        //------------------------------------------------
+
+        $("form input").keypress(function (e) {
+            if (e.which == 13) {
+                $("#ctl00_plate_bSeek").click();
+                return false;
+            }
+        }); // Анти-Enter-нажималка
+
+        $(document).ready(function () {
+            showHideOwner();
+
+            var s = 'table#ctl00_plate_gr'; var g = $('table#ctl00_plate_gr'); if (g.size() == 0) s += 'FS';
+            PrepareSortingGridHeaders(s);
+
+            PrepareTypeahead();
+
+            initMultiSelectRegType();
+        });
+
+        function initMultiSelectRegType() {
+            var ddlRegType = $('#ctl00_plate_ddlRegType');
+            var types = $('#ctl00_plate_hfRegType').val().split(',');
+            for (t = 0; t < types.length; t++) {
+                ddlRegType.find('option[value="' + types[t] + '"]').prop('selected', true);
+            }
+            ddlRegType.multiselect({
+                selectedText: "# выбрано"
+                , checkAllText: "Выбрать все"
+                , height: "auto"
+                , minWidth: "auto"
+                , uncheckAllText: "Снять все"
+                , noneSelectedText: "Укажите состояние"
+            });
+            ddlRegType.multiselect({
+                close: function (event, ui) {
+                    var prodList = '';
+                    ddlRegType.find('option:selected').each(function () {
+                        prodList += $(this).val() + ',';
+                    });
+                    prodList = prodList.length > 1 ? prodList.substring(0, prodList.length - 1) : prodList;
+                    $('#' + ddlRegType.attr('id').replace('ddl', 'hf')).val(prodList);
+                }
+            });
+        }
+
+        function showHideOwner() {
+            var is_mp = ($("#ctl00_plate_isFS_0").prop("checked")); // Это ЛП
+            if (is_mp) {
+                $(".only_for_mp").show()
+            }
+            else {
+                $("#ctl00_plate_ownName").val("");
+                $(".only_for_mp").hide()
+            }
+        }
+
+        function registryGo(sender) {
+            if (!isFirstVersion()) {
+                var guid = $("#hfIncomingGuid").val();
+                var url = "/ExpertCabinetTask.aspx?IncGUID=" + guid;
+                window.location.href = url;
+            }
+            else { $("#dialog-one-version").show(); $("#dialog-one-version").dialog(); }
+        }
+    </script>
+
+</body>
+</html>

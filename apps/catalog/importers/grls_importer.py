@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,11 +37,15 @@ MNN_KEYS = (
     "млн / группировочное (химическое) наименование",
     "международное непатентованное наименование",
     "группировочное (химическое) наименование",
+    "internationalname",
+    "international_name",
     "inn",
 )
 FORM_KEYS = (
     "лекарственная форма",
     "форма выпуска",
+    "formrelease",
+    "form_release",
     "dosage_form",
     "form",
 )
@@ -59,12 +64,14 @@ STATUS_KEYS = (
 MANUFACTURER_KEYS = (
     "производитель",
     "manufacturer",
+    "stages",
 )
 HOLDER_KEYS = (
     "наименование держателя / владельца регистрационного удостоверения",
     "держатель ру",
     "владелец ру",
     "holder",
+    "nameregcertificate",
 )
 
 ACTIVE_STATUS_TOKENS = (
@@ -165,6 +172,143 @@ def iter_grls_rows(path: Path) -> Iterable[dict[str, Any]]:
     raise ValueError(f"Неподдерживаемый формат файла: {suffix}. Нужен .csv или .xlsx")
 
 
+# Минздрав open-data CSV (2015–2017): multiline-поля ломают DictReader.
+# Якорь — страна производителя, сразу после неё идут tradename и МНН:
+#   ...,Исландия,Валвир,,Валацикловир,"таблетки...
+_OPEN_DATA_COUNTRIES = sorted(
+    [
+        "Россия",
+        "Индия",
+        "Германия",
+        "Швейцария",
+        "Словения",
+        "Франция",
+        "Китай",
+        "Венгрия",
+        "Великобритания",
+        "Нидерланды",
+        "Украина",
+        "США",
+        "Италия",
+        "Израиль",
+        "Республика Беларусь",
+        "Беларусь",
+        "Австрия",
+        "Польша",
+        "Чешская Республика",
+        "Дания",
+        "Бельгия",
+        "Испания",
+        "Сербия",
+        "Турция",
+        "Болгария",
+        "Исландия",
+        "Латвия",
+        "Ирландия",
+        "Финляндия",
+        "Швеция",
+        "Канада",
+        "Япония",
+        "Кипр",
+        "Румыния",
+        "Аргентина",
+        "Вьетнам",
+        "Норвегия",
+        "Пакистан",
+        "Люксембург",
+        "Португалия",
+        "Чехия",
+        "Мексика",
+        "Казахстан",
+        "Грузия",
+        "Египет",
+        "Иран",
+        "Куба",
+        "Литва",
+        "Эстония",
+        "Греция",
+        "Армения",
+        "Австралия",
+        "Бразилия",
+        "Узбекистан",
+        "Республика Корея",
+        "Корея",
+        "Хорватия",
+        "Республика Хорватия",
+        "Словацкая Республика",
+        "Босния и Герцеговина",
+        "Соединенное Королевство",
+        "Республика Молдова",
+        "Республика Македония",
+        "Тайвань",
+        "Саудовская Аравия",
+        "Иордания",
+        "Таиланд",
+        "Перу",
+        "КНР",
+        "Пуэрто-Рико",
+        "Индонезия",
+        "Лихтенштейн",
+        "Оман",
+        "ЮАР",
+        "Мальта",
+        "Сингапур",
+        "Новая Зеландия",
+        "Азербайджан",
+        "Южно-Африканская Республика",
+        "Гонконг (КНР)",
+        "Республика Куба",
+        "Республика Армения",
+        "Республика Казахстан",
+        "Республика Польша",
+        "Республика Болгария",
+        "Республика Сербия",
+        "Республика Эстония",
+        "Эстонская Республика",
+        "Югославия",
+        "Македония",
+        "Панама",
+        "Соединенные Штаты",
+        "Корея Южная",
+    ],
+    key=len,
+    reverse=True,
+)
+_OPEN_DATA_COUNTRY_SET = {c.casefold() for c in _OPEN_DATA_COUNTRIES}
+_OPEN_DATA_TRADE_RE = re.compile(
+    r",(?P<country>"
+    + "|".join(re.escape(c) for c in _OPEN_DATA_COUNTRIES)
+    + r"),(?P<trade>[^,\r\n\"]+),(?P<field_a>[^,\r\n\"]*),(?P<field_b>[^,\r\n\"]*)",
+    re.IGNORECASE,
+)
+_ADDRESS_JUNK_RE = re.compile(
+    r"(?i)\b(street|avenue|road|str\.|rue |plaza|building|house|basel|budapest|"
+    r"zagreb|diemen|ingelheim|freiburg)\b|^\d{2,}|\d{3,}\s"
+)
+
+
+def _iter_minzdrav_opendata(text: str) -> Iterable[dict[str, Any]]:
+    """Разбор повреждённого CSV open-data ГРЛС: tradename сразу после страны."""
+    for match in _OPEN_DATA_TRADE_RE.finditer(text):
+        trade = (match.group("trade") or "").strip().strip('"')
+        if len(trade) < 2 or trade.startswith('"'):
+            continue
+        if trade.casefold() in _OPEN_DATA_COUNTRY_SET:
+            continue
+        if _ADDRESS_JUNK_RE.search(trade):
+            continue
+        if not re.search(r"[A-Za-zА-Яа-яЁё]", trade):
+            continue
+        mnn = (match.group("field_a") or "").strip() or (match.group("field_b") or "").strip()
+        yield {
+            "country": match.group("country"),
+            "tradename": trade,
+            "internationalname": mnn,
+            "formrelease": "",
+            "состояние": "Действующий",
+        }
+
+
 def _iter_csv(path: Path) -> Iterable[dict[str, Any]]:
     raw = path.read_bytes()
     text = None
@@ -180,7 +324,18 @@ def _iter_csv(path: Path) -> Iterable[dict[str, Any]]:
     # Detect delimiter
     sample = text[:4096]
     delimiter = ";" if sample.count(";") >= sample.count(",") else ","
-    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
+
+    # Минздрав open-data: английские заголовки + часто пустой/сдвинутый tradename.
+    header_line = text.splitlines()[0].casefold() if text else ""
+    if "tradename" in header_line and "internationalname" in header_line:
+        rows = list(_iter_minzdrav_opendata(text))
+        nonempty = sum(1 for r in rows if (r.get("tradename") or "").strip())
+        if nonempty > 0:
+            yield from rows
+            return
+
+    # Обычный CSV/TSV (ручной экспорт ГРЛС, sample и т.п.)
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     for row in reader:
         yield {str(k or ""): v for k, v in row.items()}
 

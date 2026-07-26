@@ -63,8 +63,10 @@ def is_importable_mkb_row(code: str, name: str, level: int) -> bool:
 
 
 def row_to_disease_item(code: str, name: str, level: int) -> dict[str, Any]:
+    from apps.catalog.utils import clean_disease_display_name
+
     code = code.strip().upper()
-    name = name.strip()
+    name = clean_disease_display_name(name.strip())
     description = f"МКБ-10: {code}"
     if level >= 3:
         description = f"{description}. Код диагноза по Международной классификации болезней."
