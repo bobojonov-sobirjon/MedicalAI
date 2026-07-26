@@ -130,6 +130,51 @@ class DiseaseMiniPublicSerializer(_CleanDiseaseNameMixin, serializers.ModelSeria
         return description_preview(obj.description, max_chars=120)
 
 
+class DrugListSerializer(serializers.ModelSerializer):
+    """Лёгкая карточка для списка лекарств (без вложенных diseases — они в detail)."""
+
+    description_preview = serializers.SerializerMethodField()
+    instructions_preview = serializers.SerializerMethodField()
+    diseases_count = serializers.IntegerField(read_only=True)
+    in_my_cabinet = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Drug
+        fields = (
+            "id",
+            "name",
+            "description_preview",
+            "instructions_preview",
+            "dosage",
+            "image",
+            "rating",
+            "diseases_count",
+            "in_my_cabinet",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_description_preview(self, obj: Drug) -> str:
+        return description_preview(obj.description, max_chars=160)
+
+    def get_instructions_preview(self, obj: Drug) -> str:
+        return description_preview(obj.instructions, max_chars=120)
+
+    def get_in_my_cabinet(self, obj: Drug) -> bool:
+        request = self.context.get("request")
+        if not request or not getattr(request.user, "is_authenticated", False):
+            return False
+        cache_key = "_cabinet_drug_ids"
+        if cache_key not in self.context:
+            from apps.cabinet.models import CabinetItem
+
+            self.context[cache_key] = set(
+                CabinetItem.objects.filter(user=request.user, drug_id__isnull=False)
+                .values_list("drug_id", flat=True)
+            )
+        return obj.pk in self.context[cache_key]
+
+
 class DrugSerializer(serializers.ModelSerializer):
     """Полная карточка лекарства + связанные болезни (круговая навигация)."""
 
