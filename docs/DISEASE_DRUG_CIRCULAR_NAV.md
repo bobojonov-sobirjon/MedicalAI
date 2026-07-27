@@ -32,9 +32,17 @@
 | Показать только `description_preview` | На экране detail брать **`description`** (+ `instructions`) |
 | Не рисовать блок болезней у лекарства | Рисовать `diseases` / `related_diseases` внизу |
 
-**Правило:**  
+**Правило (рекомендуется):**  
 - Тап по лекарству → `GET /api/catalog/drugs/{id}/`  
 - Тап по болезни → `GET /api/catalog/diseases/{id}/`
+
+**Важно (исправление «нет бесконечности»):**  
+Вложенные объекты уже содержат следующий уровень связей, даже если Flutter **не** делает повторный GET:
+
+- В `GET /diseases/{id}/` → каждый элемент `drugs[]` содержит `diseases` / `related_diseases`
+- В `GET /drugs/{id}/` → каждый элемент `diseases[]` содержит `drugs` / `related_drugs`
+
+Так можно ходить по кругу, используя данные из текущего response.
 
 Alias-поля (одинаковое содержимое):
 

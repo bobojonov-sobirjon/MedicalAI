@@ -79,7 +79,19 @@ class PublicDiseaseDetailView(APIView):
 
     @extend_schema(tags=["Заболевания"], summary="Получить заболевание (с лекарствами)")
     def get(self, request, pk: int):
-        obj = get_object_or_404(Disease.objects.prefetch_related("drugs"), pk=pk)
+        from django.db.models import Prefetch
+
+        obj = get_object_or_404(
+            Disease.objects.prefetch_related(
+                Prefetch(
+                    "drugs",
+                    queryset=Drug.objects.filter(is_active=True)
+                    .prefetch_related("diseases")
+                    .order_by("name"),
+                )
+            ),
+            pk=pk,
+        )
         return Response(DiseaseDetailSerializer(obj, context={"request": request}).data)
 
 
@@ -300,6 +312,16 @@ class PublicDrugDetailView(APIView):
 
     @extend_schema(tags=["Лекарства"], summary="Получить лекарство")
     def get(self, request, pk: int):
-        obj = get_object_or_404(Drug.objects.prefetch_related("diseases"), pk=pk)
+        from django.db.models import Prefetch
+
+        obj = get_object_or_404(
+            Drug.objects.prefetch_related(
+                Prefetch(
+                    "diseases",
+                    queryset=Disease.objects.prefetch_related("drugs").order_by("name"),
+                )
+            ),
+            pk=pk,
+        )
         return Response(DrugSerializer(obj, context={"request": request}).data)
 

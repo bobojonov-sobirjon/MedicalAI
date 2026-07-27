@@ -26,7 +26,7 @@ class DiseaseSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
 
 
 class DrugMiniPublicSerializer(serializers.ModelSerializer):
-    """Краткая карточка препарата внутри заболевания (клик → GET /catalog/drugs/{id}/)."""
+    """Краткая карточка препарата (без вложенных болезней)."""
 
     description_preview = serializers.SerializerMethodField()
     in_my_cabinet = serializers.SerializerMethodField()
@@ -46,14 +46,12 @@ class DrugMiniPublicSerializer(serializers.ModelSerializer):
         )
 
     def get_description_preview(self, obj: Drug) -> str:
-        # Клиент показывает 1–2 строки; полное описание — на экране лекарства по id.
         return description_preview(obj.description, max_chars=140)
 
     def get_in_my_cabinet(self, obj: Drug) -> bool:
         request = self.context.get("request")
         if not request or not getattr(request.user, "is_authenticated", False):
             return False
-        # Один запрос на весь вложенный список, а не запрос на каждый препарат.
         cache_key = "_cabinet_drug_ids"
         if cache_key not in self.context:
             from apps.cabinet.models import CabinetItem
@@ -65,8 +63,87 @@ class DrugMiniPublicSerializer(serializers.ModelSerializer):
         return obj.pk in self.context[cache_key]
 
 
+class DiseaseMiniPublicSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
+    """Краткая карточка болезни (без вложенных лекарств)."""
+
+    description_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Disease
+        fields = ("id", "name", "description", "description_preview")
+
+    def get_description_preview(self, obj: Disease) -> str:
+        return description_preview(obj.description, max_chars=120)
+
+
+class DrugNestedInDiseaseSerializer(DrugMiniPublicSerializer):
+    """Препарат внутри болезни: сразу со списком болезней (круговая навигация без лишнего GET)."""
+
+    diseases = serializers.SerializerMethodField()
+    related_diseases = serializers.SerializerMethodField()
+
+    class Meta(DrugMiniPublicSerializer.Meta):
+        fields = DrugMiniPublicSerializer.Meta.fields + (
+            "diseases",
+            "related_diseases",
+        )
+
+    def _disease_list(self, obj: Drug) -> list:
+        cache = self.context.setdefault("_nested_drug_diseases", {})
+        if obj.pk in cache:
+            return cache[obj.pk]
+        qs = obj.diseases.all().order_by("name")[:40]
+        data = DiseaseMiniPublicSerializer(qs, many=True, context=self.context).data
+        cache[obj.pk] = data
+        return data
+
+    def get_diseases(self, obj: Drug) -> list:
+        return self._disease_list(obj)
+
+    def get_related_diseases(self, obj: Drug) -> list:
+        return self._disease_list(obj)
+
+
+class DiseaseNestedInDrugSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
+    """Болезнь внутри лекарства: сразу со списком лекарств (круговая навигация)."""
+
+    description_preview = serializers.SerializerMethodField()
+    drugs = serializers.SerializerMethodField()
+    related_drugs = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Disease
+        fields = (
+            "id",
+            "name",
+            "description",
+            "description_preview",
+            "drugs",
+            "related_drugs",
+        )
+
+    def get_description_preview(self, obj: Disease) -> str:
+        return description_preview(obj.description, max_chars=120)
+
+    def _drug_list(self, obj: Disease) -> list:
+        cache = self.context.setdefault("_nested_disease_drugs", {})
+        if obj.pk in cache:
+            return cache[obj.pk]
+        # Без diseases внутри — иначе бесконечная вложенность.
+        qs = obj.drugs.filter(is_active=True).order_by("name")[:40]
+        data = DrugMiniPublicSerializer(qs, many=True, context=self.context).data
+        cache[obj.pk] = data
+        return data
+
+    def get_drugs(self, obj: Disease) -> list:
+        return self._drug_list(obj)
+
+    def get_related_drugs(self, obj: Disease) -> list:
+        return self._drug_list(obj)
+
+
 class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
-    """Карточка заболевания + список лекарств (круговая навигация Disease ↔ Drug)."""
+    """Карточка заболевания + список лекарств (с их болезнями для круговой навигации)."""
 
     description_preview = serializers.SerializerMethodField()
     drugs = serializers.SerializerMethodField()
@@ -92,8 +169,8 @@ class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerialize
         cache = self.context.setdefault("_disease_drug_payload", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        qs = obj.drugs.filter(is_active=True).order_by("name")[:80]
-        data = DrugMiniPublicSerializer(qs, many=True, context=self.context).data
+        qs = obj.drugs.filter(is_active=True).prefetch_related("diseases").order_by("name")[:80]
+        data = DrugNestedInDiseaseSerializer(qs, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
 
@@ -101,7 +178,6 @@ class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerialize
         return self._drug_list(obj)
 
     def get_related_drugs(self, obj: Disease) -> list:
-        # Alias для клиента («Лекарства» / круговая навигация).
         return self._drug_list(obj)
 
 
@@ -115,19 +191,6 @@ class BodyPartSerializer(serializers.ModelSerializer):
     class Meta:
         model = BodyPart
         fields = ("id", "code", "label", "sort_order", "created_at", "updated_at")
-
-
-class DiseaseMiniPublicSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
-    """Краткая карточка болезни внутри лекарства (клик → GET /catalog/diseases/{id}/)."""
-
-    description_preview = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Disease
-        fields = ("id", "name", "description", "description_preview")
-
-    def get_description_preview(self, obj: Disease) -> str:
-        return description_preview(obj.description, max_chars=120)
 
 
 class DrugListSerializer(serializers.ModelSerializer):
@@ -176,7 +239,7 @@ class DrugListSerializer(serializers.ModelSerializer):
 
 
 class DrugSerializer(serializers.ModelSerializer):
-    """Полная карточка лекарства + связанные болезни (круговая навигация)."""
+    """Полная карточка лекарства + болезни (у болезней сразу есть drugs для круга)."""
 
     diseases = serializers.SerializerMethodField()
     related_diseases = serializers.SerializerMethodField()
@@ -210,8 +273,8 @@ class DrugSerializer(serializers.ModelSerializer):
         cache = self.context.setdefault("_drug_disease_payload", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        qs = obj.diseases.all().order_by("name")[:60]
-        data = DiseaseMiniPublicSerializer(qs, many=True, context=self.context).data
+        qs = obj.diseases.prefetch_related("drugs").order_by("name")[:60]
+        data = DiseaseNestedInDrugSerializer(qs, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
 
@@ -219,7 +282,6 @@ class DrugSerializer(serializers.ModelSerializer):
         return self._disease_list(obj)
 
     def get_related_diseases(self, obj: Drug) -> list:
-        # Alias для клиента («Связанные заболевания»).
         return self._disease_list(obj)
 
     def get_description_preview(self, obj: Drug) -> str:
