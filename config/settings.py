@@ -179,6 +179,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'config.middleware.apikey_middleware.BackendApiKeyMiddleware',
+    'config.middleware.subscription_access_middleware.SubscriptionAccessMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -519,6 +520,7 @@ RUTRONIX_VISION_MAX_IMAGE_SIDE = int(os.getenv('RUTRONIX_VISION_MAX_IMAGE_SIDE',
 RUTRONIX_VISION_JPEG_QUALITY = int(os.getenv('RUTRONIX_VISION_JPEG_QUALITY', '82'))
 
 PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
+FREE_TRIAL_DAYS = int(os.getenv('FREE_TRIAL_DAYS', '1'))
 FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))
 SUBSCRIPTION_EXPIRY_WARNING_DAYS = os.getenv('SUBSCRIPTION_EXPIRY_WARNING_DAYS', '7,3,1')
 ENABLE_SUBSCRIPTION_SCHEDULER = os.getenv('ENABLE_SUBSCRIPTION_SCHEDULER', 'true').strip()

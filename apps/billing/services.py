@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def _trial_days() -> int:
+    trial_days = getattr(settings, "FREE_TRIAL_DAYS", None)
+    if trial_days is not None:
+        return max(1, int(trial_days))
     months = int(getattr(settings, "FREE_TRIAL_MONTHS", 3))
     return max(1, months * 30)
 
@@ -48,6 +51,26 @@ def get_active_subscription(user) -> UserSubscription | None:
     return None
 
 
+def get_access_scope(user) -> str:
+    sub = get_active_subscription(user)
+    if sub and sub.tariff.tier in {
+        TariffPlan.Tier.FREE_TRIAL,
+        TariffPlan.Tier.STANDARD,
+        TariffPlan.Tier.PREMIUM,
+    }:
+        return "full"
+    return "history_only"
+
+
+def get_paywall_payload() -> dict:
+    return {
+        "title": "Бесплатный период закончился",
+        "message": "Бесплатный период закончился. Оплатить подписку.",
+        "cta_text": "Оплатить подписку",
+        "cta_action": "open_subscription_payment",
+    }
+
+
 def get_user_limits(user) -> dict:
     sub = get_active_subscription(user)
     if sub and sub.tariff.limits:
@@ -60,6 +83,8 @@ def get_user_limits(user) -> dict:
 
 def _expires_at_for_tariff(tariff: TariffPlan, started_at=None):
     started_at = started_at or timezone.now()
+    if tariff.is_auto_trial:
+        return started_at + timedelta(days=_trial_days())
     if tariff.validity_days:
         return started_at + timedelta(days=int(tariff.validity_days))
     return None
@@ -265,13 +290,18 @@ def _notify_trial_expiring(sub: UserSubscription, days_left: int) -> None:
 def subscription_status_payload(user) -> dict:
     sub = get_active_subscription(user)
     profile = get_or_create_billing_profile(user)
+    access_scope = get_access_scope(user)
+    paywall = get_paywall_payload() if access_scope != "full" else None
     if sub is None:
         return {
             "has_active_subscription": False,
             "free_trial_used": profile.free_trial_used,
             "can_get_free_trial": False,
+            "access_scope": access_scope,
+            "allowed_sections": ["history"],
             "tariff": None,
             "limits": get_user_limits(user),
+            "paywall": paywall,
         }
     days_left = None
     if sub.expires_at:
@@ -281,6 +311,8 @@ def subscription_status_payload(user) -> dict:
         "has_active_subscription": True,
         "free_trial_used": profile.free_trial_used,
         "can_get_free_trial": not profile.free_trial_used,
+        "access_scope": access_scope,
+        "allowed_sections": ["history"] if access_scope == "history_only" else ["all"],
         "tariff": {
             "slug": sub.tariff.slug,
             "tier": sub.tariff.tier,
@@ -292,6 +324,7 @@ def subscription_status_payload(user) -> dict:
             "source": sub.source,
         },
         "limits": get_user_limits(user),
+        "paywall": paywall,
     }
 
 

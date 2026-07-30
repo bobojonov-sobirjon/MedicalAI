@@ -10,7 +10,7 @@ class Command(BaseCommand):
     help = "Создать или обновить тарифы MedicAi (ТЗ §8.2.4, доп. §9.4)."
 
     def handle(self, *args, **options):
-        trial_days = max(1, int(getattr(settings, "FREE_TRIAL_MONTHS", 3)) * 30)
+        trial_days = max(1, int(getattr(settings, "FREE_TRIAL_DAYS", 1)))
         plans = [
             {
                 "slug": "free_trial",
@@ -34,18 +34,18 @@ class Command(BaseCommand):
                 "slug": "free",
                 "tier": TariffPlan.Tier.FREE,
                 "title": "Бесплатный",
-                "description": "Базовый доступ после окончания пробного периода.",
+                "description": "После окончания пробного периода доступен только раздел истории болезни.",
                 "price_rub": 0,
                 "validity_days": None,
                 "sort_order": 1,
                 "is_purchasable": False,
                 "is_auto_trial": False,
                 "limits": {
-                    "max_disease_records": 5,
-                    "max_cabinet_items": 3,
+                    "max_disease_records": None,
+                    "max_cabinet_items": 0,
                     "extended_ai": False,
                     "calendar_ai": False,
-                    "useful_tips": True,
+                    "useful_tips": False,
                 },
             },
             {

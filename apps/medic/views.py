@@ -380,12 +380,12 @@ class AppConfigView(APIView):
     @extend_schema(
         tags=["Контент"],
         summary="Публичные настройки приложения",
-        description="Срок бесплатного периода (месяцы), контакт психолога и др. без авторизации.",
+        description="Срок бесплатного периода (дни), контакт психолога и др. без авторизации.",
     )
     def get(self, request):
         return Response(
             {
-                "free_trial_months": int(getattr(settings, "FREE_TRIAL_MONTHS", 3)),
+                "free_trial_days": int(getattr(settings, "FREE_TRIAL_DAYS", 1)),
                 "psychology_email": getattr(settings, "PSYCHOLOGY_EMAIL", "psychology@medic-ai.ru"),
             }
         )
