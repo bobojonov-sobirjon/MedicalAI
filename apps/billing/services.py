@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import transaction
@@ -12,7 +13,13 @@ from apps.medic.models import NotificationEvent
 from apps.medic.ws_broadcast import broadcast_notification_event
 
 from .models import Payment, TariffPlan, UserBillingProfile, UserSubscription
-from .robokassa import build_payment_url, format_out_sum, robokassa_configured, verify_result_signature, verify_success_signature
+from .robokassa import (
+    build_payment_url,
+    format_out_sum,
+    robokassa_configured,
+    verify_result_signature,
+    verify_success_signature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,7 @@ def get_or_create_billing_profile(user) -> UserBillingProfile:
 
 
 def get_active_subscription(user) -> UserSubscription | None:
+    """Return current non-expired ACTIVE subscription; expire stale rows lazily."""
     now = timezone.now()
     qs = (
         UserSubscription.objects.filter(user=user, status=UserSubscription.Status.ACTIVE)
@@ -46,6 +54,8 @@ def get_active_subscription(user) -> UserSubscription | None:
     )
     for sub in qs:
         if sub.expires_at and sub.expires_at <= now:
+            sub.status = UserSubscription.Status.EXPIRED
+            sub.save(update_fields=["status"])
             continue
         return sub
     return None
@@ -81,9 +91,93 @@ def get_user_limits(user) -> dict:
     return {}
 
 
+def _ensure_default_trial_tariff() -> TariffPlan:
+    trial = TariffPlan.objects.filter(is_auto_trial=True, is_active=True).order_by("sort_order").first()
+    if trial:
+        return trial
+    trial = TariffPlan.objects.filter(slug="free_trial").first()
+    if trial:
+        trial.is_active = True
+        trial.is_auto_trial = True
+        trial.tier = TariffPlan.Tier.FREE_TRIAL
+        trial.validity_days = _trial_days()
+        trial.is_purchasable = False
+        trial.save(
+            update_fields=[
+                "is_active",
+                "is_auto_trial",
+                "tier",
+                "validity_days",
+                "is_purchasable",
+            ]
+        )
+        return trial
+    return TariffPlan.objects.create(
+        slug="free_trial",
+        tier=TariffPlan.Tier.FREE_TRIAL,
+        title="Пробный период",
+        description="Бесплатный доступ 24 часа при регистрации. Выдаётся один раз.",
+        price_rub=0,
+        validity_days=_trial_days(),
+        sort_order=0,
+        is_purchasable=False,
+        is_auto_trial=True,
+        is_active=True,
+        limits={
+            "max_disease_records": None,
+            "max_cabinet_items": None,
+            "extended_ai": True,
+            "calendar_ai": True,
+            "useful_tips": True,
+        },
+    )
+
+
+def _ensure_default_free_tariff() -> TariffPlan:
+    free = TariffPlan.objects.filter(slug="free", is_active=True).first()
+    if free:
+        return free
+    free = TariffPlan.objects.filter(slug="free").first()
+    if free:
+        free.is_active = True
+        free.tier = TariffPlan.Tier.FREE
+        free.is_purchasable = False
+        free.is_auto_trial = False
+        free.validity_days = None
+        free.description = "После окончания пробного периода доступен только раздел истории болезни."
+        free.limits = {
+            "max_disease_records": None,
+            "max_cabinet_items": 0,
+            "extended_ai": False,
+            "calendar_ai": False,
+            "useful_tips": False,
+        }
+        free.save()
+        return free
+    return TariffPlan.objects.create(
+        slug="free",
+        tier=TariffPlan.Tier.FREE,
+        title="Бесплатный",
+        description="После окончания пробного периода доступен только раздел истории болезни.",
+        price_rub=0,
+        validity_days=None,
+        sort_order=1,
+        is_purchasable=False,
+        is_auto_trial=False,
+        is_active=True,
+        limits={
+            "max_disease_records": None,
+            "max_cabinet_items": 0,
+            "extended_ai": False,
+            "calendar_ai": False,
+            "useful_tips": False,
+        },
+    )
+
+
 def _expires_at_for_tariff(tariff: TariffPlan, started_at=None):
     started_at = started_at or timezone.now()
-    if tariff.is_auto_trial:
+    if tariff.is_auto_trial or tariff.tier == TariffPlan.Tier.FREE_TRIAL:
         return started_at + timedelta(days=_trial_days())
     if tariff.validity_days:
         return started_at + timedelta(days=int(tariff.validity_days))
@@ -117,19 +211,13 @@ def _activate_subscription(
 @transaction.atomic
 def grant_welcome_trial(user) -> UserSubscription | None:
     """
-    Один раз на аккаунт: пробный тариф при первой регистрации (ТЗ §8.2.4).
+    Один раз на аккаунт: пробный тариф 24 часа при первой регистрации.
     """
     profile = get_or_create_billing_profile(user)
     if profile.free_trial_used:
         return get_active_subscription(user)
 
-    trial = TariffPlan.objects.filter(is_auto_trial=True, is_active=True).order_by("sort_order").first()
-    if not trial:
-        trial = TariffPlan.objects.filter(slug="free_trial", is_active=True).first()
-    if not trial:
-        logger.warning("No auto-trial tariff configured; skipping welcome trial for user %s", user.pk)
-        return None
-
+    trial = _ensure_default_trial_tariff()
     profile.free_trial_used = True
     profile.save(update_fields=["free_trial_used", "updated_at"])
 
@@ -140,10 +228,31 @@ def grant_welcome_trial(user) -> UserSubscription | None:
 
 @transaction.atomic
 def assign_free_plan(user) -> UserSubscription:
-    free = TariffPlan.objects.filter(slug="free", is_active=True).first()
-    if not free:
-        raise ValueError("Tariff 'free' is not configured")
+    free = _ensure_default_free_tariff()
     return _activate_subscription(user, free, source=UserSubscription.Source.AUTO_FREE)
+
+
+@transaction.atomic
+def ensure_user_subscription(user) -> UserSubscription | None:
+    """
+    Guarantee a billing state for the user:
+    - active paid/trial → keep
+    - no trial used → grant 24h trial
+    - otherwise → free (history_only)
+    """
+    sub = get_active_subscription(user)
+    if sub:
+        return sub
+
+    profile = get_or_create_billing_profile(user)
+    if not profile.free_trial_used:
+        return grant_welcome_trial(user)
+
+    try:
+        return assign_free_plan(user)
+    except Exception:
+        logger.exception("Failed to assign free plan for user %s", user.pk)
+        return None
 
 
 @transaction.atomic
@@ -173,6 +282,15 @@ def create_payment_for_tariff(user, tariff_slug: str) -> tuple[Payment, str]:
     return payment, url
 
 
+def _amounts_equal(out_sum: str, expected: Decimal) -> bool:
+    """Robokassa may send 399 / 399.0 / 399.00 — compare as Decimal."""
+    try:
+        got = Decimal(str(out_sum).strip().replace(",", "."))
+    except (InvalidOperation, AttributeError, TypeError):
+        return False
+    return got.quantize(Decimal("0.01")) == Decimal(expected).quantize(Decimal("0.01"))
+
+
 @transaction.atomic
 def _complete_payment_if_valid(
     *,
@@ -187,32 +305,73 @@ def _complete_payment_if_valid(
         _log_payment_error(f"Invalid Robokassa signature for InvId={inv_id}", path=source_path)
         raise ValueError("Неверная подпись")
 
-    payment = Payment.objects.select_for_update().select_related("tariff", "user").get(robokassa_inv_id=inv_id)
-    expected = format_out_sum(Decimal(payment.amount_rub))
-    if format_out_sum(Decimal(out_sum)) != expected:
+    payment = (
+        Payment.objects.select_for_update()
+        .select_related("tariff", "user")
+        .filter(robokassa_inv_id=inv_id)
+        .first()
+    )
+    if payment is None:
+        payment = (
+            Payment.objects.select_for_update()
+            .select_related("tariff", "user")
+            .filter(pk=inv_id)
+            .first()
+        )
+    if payment is None:
+        _log_payment_error(f"Payment not found for InvId={inv_id}", path=source_path)
+        raise Payment.DoesNotExist(f"InvId={inv_id}")
+
+    if not _amounts_equal(out_sum, Decimal(payment.amount_rub)):
         payment.status = Payment.Status.FAILED
-        payment.error_message = f"Сумма не совпадает: {out_sum} != {expected}"
+        payment.error_message = f"Сумма не совпадает: {out_sum} != {format_out_sum(Decimal(payment.amount_rub))}"
         payment.callback_payload = payload
         payment.save(update_fields=["status", "error_message", "callback_payload", "updated_at"])
         _log_payment_error(payment.error_message, user=payment.user, path=source_path)
         raise ValueError("Сумма не совпадает")
 
     if payment.status == Payment.Status.PAID:
+        # Idempotent: ensure paid subscription still active (webhook may retry).
+        ensure_paid_subscription(payment)
         return payment
 
     payment.status = Payment.Status.PAID
     payment.paid_at = timezone.now()
     payment.callback_payload = payload
-    payment.save(update_fields=["status", "paid_at", "callback_payload", "updated_at"])
+    if payment.robokassa_inv_id is None:
+        payment.robokassa_inv_id = inv_id
+    payment.save(
+        update_fields=["status", "paid_at", "callback_payload", "robokassa_inv_id", "updated_at"]
+    )
 
-    _activate_subscription(
+    ensure_paid_subscription(payment)
+    _notify_payment_success(payment)
+    logger.info(
+        "Payment #%s (InvId=%s) marked PAID; user=%s tariff=%s",
+        payment.pk,
+        inv_id,
+        payment.user_id,
+        payment.tariff.slug,
+    )
+    return payment
+
+
+def ensure_paid_subscription(payment: Payment) -> UserSubscription:
+    """Activate/refresh paid subscription for a confirmed payment."""
+    active = get_active_subscription(payment.user)
+    if (
+        active
+        and active.payment_id == payment.pk
+        and active.tariff_id == payment.tariff_id
+        and active.source == UserSubscription.Source.PAYMENT
+    ):
+        return active
+    return _activate_subscription(
         payment.user,
         payment.tariff,
         source=UserSubscription.Source.PAYMENT,
         payment=payment,
     )
-    _notify_payment_success(payment)
-    return payment
 
 
 @transaction.atomic
@@ -288,43 +447,76 @@ def _notify_trial_expiring(sub: UserSubscription, days_left: int) -> None:
 
 
 def subscription_status_payload(user) -> dict:
+    ensure_user_subscription(user)
     sub = get_active_subscription(user)
     profile = get_or_create_billing_profile(user)
     access_scope = get_access_scope(user)
     paywall = get_paywall_payload() if access_scope != "full" else None
-    if sub is None:
-        return {
-            "has_active_subscription": False,
-            "free_trial_used": profile.free_trial_used,
-            "can_get_free_trial": False,
-            "access_scope": access_scope,
-            "allowed_sections": ["history"],
-            "tariff": None,
-            "limits": get_user_limits(user),
-            "paywall": paywall,
-        }
-    days_left = None
-    if sub.expires_at:
-        delta = sub.expires_at - timezone.now()
-        days_left = max(0, delta.days)
-    return {
-        "has_active_subscription": True,
+
+    is_trial_active = bool(
+        sub
+        and sub.tariff.tier == TariffPlan.Tier.FREE_TRIAL
+        and access_scope == "full"
+    )
+    is_paid_active = bool(
+        sub
+        and sub.tariff.tier in {TariffPlan.Tier.STANDARD, TariffPlan.Tier.PREMIUM}
+        and access_scope == "full"
+    )
+    requires_payment = access_scope != "full"
+
+    base = {
+        "has_active_subscription": bool(sub and access_scope == "full"),
+        "is_trial_active": is_trial_active,
+        "is_paid_active": is_paid_active,
+        "requires_payment": requires_payment,
         "free_trial_used": profile.free_trial_used,
         "can_get_free_trial": not profile.free_trial_used,
         "access_scope": access_scope,
         "allowed_sections": ["history"] if access_scope == "history_only" else ["all"],
+        "limits": get_user_limits(user),
+        "paywall": paywall,
+        "trial_days": _trial_days(),
+    }
+
+    if sub is None:
+        return {
+            **base,
+            "tariff": None,
+            "seconds_left": None,
+            "hours_left": None,
+            "days_left": None,
+        }
+
+    seconds_left = None
+    hours_left = None
+    days_left = None
+    if sub.expires_at:
+        seconds_left = max(0, int((sub.expires_at - timezone.now()).total_seconds()))
+        hours_left = max(0, math.ceil(seconds_left / 3600)) if seconds_left else 0
+        # Ceil days so 24h trial shows days_left=1 until the last second of day 1 window.
+        days_left = max(0, math.ceil(seconds_left / 86400)) if seconds_left else 0
+
+    return {
+        **base,
         "tariff": {
             "slug": sub.tariff.slug,
             "tier": sub.tariff.tier,
             "title": sub.tariff.title,
             "description": sub.tariff.description,
             "price_rub": str(sub.tariff.price_rub),
+            "started_at": sub.started_at,
             "expires_at": sub.expires_at,
+            "seconds_left": seconds_left,
+            "hours_left": hours_left,
             "days_left": days_left,
             "source": sub.source,
+            "is_trial": sub.tariff.tier == TariffPlan.Tier.FREE_TRIAL,
+            "is_paid": sub.tariff.tier in {TariffPlan.Tier.STANDARD, TariffPlan.Tier.PREMIUM},
         },
-        "limits": get_user_limits(user),
-        "paywall": paywall,
+        "seconds_left": seconds_left,
+        "hours_left": hours_left,
+        "days_left": days_left,
     }
 
 
@@ -357,10 +549,10 @@ def process_subscription_lifecycle_tick() -> None:
             broadcast_notification_event(expired_event, created=True)
             continue
 
-        if not sub.tariff.is_auto_trial:
+        if not sub.tariff.is_auto_trial and sub.tariff.tier != TariffPlan.Tier.FREE_TRIAL:
             continue
 
-        days_left = (sub.expires_at.date() - now.date()).days
+        days_left = max(0, math.ceil((sub.expires_at - now).total_seconds() / 86400))
         sent = set(sub.expiry_warnings_sent or [])
         for threshold in warning_days:
             if days_left <= threshold and threshold not in sent:

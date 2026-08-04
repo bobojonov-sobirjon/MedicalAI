@@ -9,7 +9,8 @@ from apps.billing.services import get_access_scope, get_paywall_payload
 
 class SubscriptionAccessMiddleware:
     """
-    Restrict authenticated users with expired access to history endpoints only.
+    Restrict authenticated users without full access to history (+ picker helpers).
+    Trial / paid users get full API access.
     """
 
     HISTORY_ONLY_PREFIXES = (
@@ -17,6 +18,8 @@ class SubscriptionAccessMiddleware:
         "/api/me/doctor-visits/",
         "/api/me/analyses/",
         "/api/me/prescriptions/",
+        # History create flow needs disease autocomplete from catalog.
+        "/api/catalog/diseases/",
     )
     ALWAYS_ALLOWED_PREFIXES = (
         "/api/auth/",
@@ -24,6 +27,7 @@ class SubscriptionAccessMiddleware:
         "/api/me/profiles/",
         "/api/content/config/",
         "/api/content/pages/",
+        "/api/faq/",
     )
 
     def __init__(self, get_response):

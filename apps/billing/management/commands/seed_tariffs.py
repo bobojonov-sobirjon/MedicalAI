@@ -16,7 +16,7 @@ class Command(BaseCommand):
                 "slug": "free_trial",
                 "tier": TariffPlan.Tier.FREE_TRIAL,
                 "title": "Пробный период",
-                "description": "Бесплатный доступ при регистрации. Выдаётся один раз.",
+                "description": "Бесплатный доступ 24 часа при регистрации. Выдаётся один раз.",
                 "price_rub": 0,
                 "validity_days": trial_days,
                 "sort_order": 0,

@@ -16,7 +16,7 @@ from .serializers import (
     PaymentStatusSerializer,
     TariffPlanSerializer,
 )
-from .services import create_payment_for_tariff, subscription_status_payload
+from .services import create_payment_for_tariff, ensure_user_subscription, subscription_status_payload
 
 
 class TariffListView(APIView):
@@ -42,6 +42,7 @@ class MySubscriptionView(APIView):
         description="Текущий тариф, срок действия, лимиты и флаг использования trial.",
     )
     def get(self, request):
+        ensure_user_subscription(request.user)
         return Response(subscription_status_payload(request.user))
 
 
@@ -133,11 +134,18 @@ class PaymentDetailView(APIView):
         payment = Payment.objects.filter(pk=payment_id, user=request.user).select_related("tariff").first()
         if not payment:
             return Response({"detail": "Платёж не найден."}, status=status.HTTP_404_NOT_FOUND)
+        # If webhook already marked paid but subscription was lost, re-activate.
+        if payment.status == Payment.Status.PAID:
+            from .services import ensure_paid_subscription
+
+            ensure_paid_subscription(payment)
         data = PaymentStatusSerializer(payment).data
         if payment.status == Payment.Status.PAID:
             data["subscription"] = subscription_status_payload(request.user)
+            data["is_paid"] = True
         else:
             data["subscription"] = None
+            data["is_paid"] = False
         return Response(data)
 
 
@@ -169,6 +177,11 @@ class RobokassaResultView(APIView):
 
     def _handle(self, request):
         data = request.POST if request.method == "POST" else request.GET
+        if not data:
+            try:
+                data = request.data
+            except Exception:
+                data = {}
         out_sum = (data.get("OutSum") or "").strip()
         inv_id_raw = (data.get("InvId") or "").strip()
         signature = (data.get("SignatureValue") or "").strip()
@@ -185,7 +198,7 @@ class RobokassaResultView(APIView):
                 out_sum=out_sum,
                 inv_id=inv_id,
                 signature_value=signature,
-                payload=dict(data.items()),
+                payload=dict(data.items()) if hasattr(data, "items") else dict(data),
             )
         except Payment.DoesNotExist:
             return HttpResponse("not found", status=404)

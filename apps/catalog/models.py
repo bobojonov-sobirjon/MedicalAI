@@ -13,7 +13,7 @@ class TimeStampedModel(models.Model):
 
 
 class Disease(TimeStampedModel):
-    name = models.CharField("Название", max_length=255, unique=True)
+    name = models.CharField("Название", max_length=255, unique=True, db_index=True)
     description = models.TextField("Описание", blank=True, default="")
 
     class Meta:
@@ -56,7 +56,7 @@ class BodyPart(TimeStampedModel):
 
 
 class Drug(TimeStampedModel):
-    name = models.CharField("Название", max_length=255, unique=True)
+    name = models.CharField("Название", max_length=255, unique=True, db_index=True)
     description = models.TextField("Описание", blank=True, default="")
     instructions = models.TextField(
         "Инструкция по применению",
@@ -70,6 +70,7 @@ class Drug(TimeStampedModel):
         "Показывать в приложении",
         default=True,
         help_text="Снимите галочку, чтобы скрыть препарат (напр. мусорные импортированные записи).",
+        db_index=True,
     )
     diseases = models.ManyToManyField(
         Disease,
@@ -91,6 +92,9 @@ class Drug(TimeStampedModel):
     class Meta:
         verbose_name = "Лекарство"
         verbose_name_plural = "Лекарства"
+        indexes = [
+            models.Index(fields=["is_active", "name"], name="catalog_drug_active_name_idx"),
+        ]
 
     def __str__(self) -> str:  # pragma: no cover
         return self.name

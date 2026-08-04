@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.db.models import Prefetch
 from rest_framework import serializers
 
 from .models import BodyPart, Disease, Drug, Symptom
@@ -25,6 +26,19 @@ class DiseaseSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
         return description_preview(obj.description)
 
 
+class DiseaseSearchSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
+    """Лёгкий ответ для автокомплита «История болезней» (без полного description)."""
+
+    description_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Disease
+        fields = ("id", "name", "description_preview")
+
+    def get_description_preview(self, obj: Disease) -> str:
+        return description_preview(obj.description, max_chars=120)
+
+
 class DrugMiniPublicSerializer(serializers.ModelSerializer):
     """Краткая карточка препарата (без вложенных болезней)."""
 
@@ -36,9 +50,7 @@ class DrugMiniPublicSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "name",
-            "description",
             "description_preview",
-            "instructions",
             "dosage",
             "image",
             "rating",
@@ -129,8 +141,10 @@ class DiseaseNestedInDrugSerializer(_CleanDiseaseNameMixin, serializers.ModelSer
         cache = self.context.setdefault("_nested_disease_drugs", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        # Без diseases внутри — иначе бесконечная вложенность.
-        qs = obj.drugs.filter(is_active=True).order_by("name")[:40]
+        # Без diseases внутри — иначе бесконечная вложенность. Без полного instructions.
+        qs = obj.drugs.filter(is_active=True).only(
+            "id", "name", "description", "dosage", "image", "rating", "is_active"
+        ).order_by("name")[:20]
         data = DrugMiniPublicSerializer(qs, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
@@ -169,7 +183,17 @@ class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerialize
         cache = self.context.setdefault("_disease_drug_payload", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        qs = obj.drugs.filter(is_active=True).prefetch_related("diseases").order_by("name")[:80]
+        qs = (
+            obj.drugs.filter(is_active=True)
+            .only("id", "name", "description", "instructions", "dosage", "image", "rating", "is_active")
+            .prefetch_related(
+                Prefetch(
+                    "diseases",
+                    queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+                )
+            )
+            .order_by("name")[:40]
+        )
         data = DrugNestedInDiseaseSerializer(qs, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
@@ -270,10 +294,13 @@ class DrugSerializer(serializers.ModelSerializer):
         }
 
     def _disease_list(self, obj: Drug) -> list:
+        if self.context.get("skip_related"):
+            return []
         cache = self.context.setdefault("_drug_disease_payload", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        qs = obj.diseases.prefetch_related("drugs").order_by("name")[:60]
+        # Limit nested drugs per disease to keep detail response fast.
+        qs = obj.diseases.only("id", "name", "description").order_by("name")[:40]
         data = DiseaseNestedInDrugSerializer(qs, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
@@ -294,7 +321,12 @@ class DrugSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not getattr(request.user, "is_authenticated", False):
             return False
-        from apps.cabinet.models import CabinetItem
+        cache_key = "_cabinet_drug_ids"
+        if cache_key not in self.context:
+            from apps.cabinet.models import CabinetItem
 
-        return CabinetItem.objects.filter(user=request.user, drug_id=obj.pk).exists()
-
+            self.context[cache_key] = set(
+                CabinetItem.objects.filter(user=request.user, drug_id__isnull=False)
+                .values_list("drug_id", flat=True)
+            )
+        return obj.pk in self.context[cache_key]

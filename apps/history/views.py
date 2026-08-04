@@ -99,7 +99,7 @@ class MyDiseaseRecordListCreateView(APIView):
         if q:
             qs = qs.filter(Q(title__icontains=q) | Q(symptoms__icontains=q) | Q(disease__name__icontains=q))
         # Return full cards in list view (same structure as detail).
-        return Response(DiseaseRecordDetailSerializer(qs, many=True, context={"request": request}).data)
+        return Response(DiseaseRecordListSerializer(qs, many=True, context={"request": request}).data)
 
     @extend_schema(
         tags=["История здоровья"],
