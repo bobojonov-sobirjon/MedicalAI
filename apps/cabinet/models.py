@@ -7,7 +7,10 @@ from apps.catalog.models import Drug
 
 
 class CabinetItem(models.Model):
-    """Моя аптечка пользователя."""
+    """
+    Моя аптечка пользователя.
+    Лекарство и связанные болезни всегда берутся из справочника (catalog.Drug / Disease).
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -22,8 +25,15 @@ class CabinetItem(models.Model):
         null=True,
         blank=True,
         related_name="cabinet_entries",
+        help_text="Связь со справочником лекарств. Описание и болезни — из этой записи.",
     )
-    custom_name = models.CharField("Название (если не из справочника)", max_length=255, blank=True, default="")
+    custom_name = models.CharField(
+        "Заметка к названию",
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Не заменяет справочник; отображаемое имя — drug.name.",
+    )
     expires_at = models.DateField("Годен до", blank=True, null=True)
     note = models.TextField("Заметка", blank=True, default="")
     photo = models.ImageField("Фото упаковки", upload_to="cabinet/", blank=True, null=True)

@@ -8,10 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
-from apps.catalog.models import Drug, DrugViewLog
-from apps.catalog.serializers import DrugSerializer
+from apps.catalog.models import Disease, Drug, DrugViewLog
 from apps.core.gemini import GeminiConfigError, GeminiUnavailableError
 from apps.core.rutronix import (
     RuTronixConfigError,
@@ -21,12 +20,26 @@ from apps.core.rutronix import (
 )
 
 from .models import CabinetItem
-from .serializers import CabinetItemSerializer
+from .serializers import CabinetCatalogDrugSerializer, CabinetItemSerializer
 from .services import (
     build_recognition_result,
     recognize_cabinet_batch,
     recognize_cabinet_upload,
 )
+
+
+def _cabinet_queryset(user):
+    """Cabinet items with catalog drug + diseases prefetched from DB."""
+    return (
+        CabinetItem.objects.filter(user=user)
+        .select_related("drug")
+        .prefetch_related(
+            Prefetch(
+                "drug__diseases",
+                queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+            )
+        )
+    )
 
 
 def _parse_bool(value) -> bool:
@@ -51,15 +64,41 @@ def _read_image_upload(request):
 def _serialize_recognition(request, result: dict) -> dict:
     drug = result.get("matched_drug")
     cabinet_item = result.get("cabinet_item")
+    if cabinet_item is not None and getattr(cabinet_item, "pk", None):
+        cabinet_item = (
+            CabinetItem.objects.filter(pk=cabinet_item.pk)
+            .select_related("drug")
+            .prefetch_related(
+                Prefetch(
+                    "drug__diseases",
+                    queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+                )
+            )
+            .first()
+        )
+    if drug is not None and getattr(drug, "pk", None):
+        drug = (
+            Drug.objects.filter(pk=drug.pk)
+            .prefetch_related(
+                Prefetch(
+                    "diseases",
+                    queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+                )
+            )
+            .first()
+        )
     return {
         "recognized_name": result.get("recognized_name") or "",
         "matched_drug_id": result.get("matched_drug_id"),
-        "matched_drug": DrugSerializer(drug, context={"request": request}).data if drug else None,
+        "matched_drug": (
+            CabinetCatalogDrugSerializer(drug, context={"request": request}).data if drug else None
+        ),
         "added_to_cabinet": bool(result.get("added_to_cabinet")),
         "already_in_cabinet": bool(result.get("already_in_cabinet")),
         "cabinet_item": (
             CabinetItemSerializer(cabinet_item, context={"request": request}).data if cabinet_item else None
         ),
+        "catalog_match": bool(drug),
     }
 
 
@@ -69,33 +108,55 @@ class CabinetItemListCreateView(APIView):
     @extend_schema(
         tags=["Аптечка"],
         summary="Список моей аптечки",
+        description=(
+            "Каждая запись связана со справочником лекарств. "
+            "`drug_detail` и `diseases` подгружаются из БД catalog (лекарства и болезни)."
+        ),
         parameters=[
-            OpenApiParameter(name="q", type=str, required=False, description="Поиск по названию (drug.name или custom_name)"),
+            OpenApiParameter(
+                name="q",
+                type=str,
+                required=False,
+                description="Поиск по названию (drug.name или custom_name)",
+            ),
         ],
     )
     def get(self, request):
         q = (request.query_params.get("q") or "").strip()
-        qs = CabinetItem.objects.filter(user=request.user).select_related("drug")
+        qs = _cabinet_queryset(request.user)
         if q:
             qs = qs.filter(Q(drug__name__icontains=q) | Q(custom_name__icontains=q))
         qs = qs.order_by("-expires_at", "-created_at")
         return Response(CabinetItemSerializer(qs, many=True, context={"request": request}).data)
 
-    @extend_schema(tags=["Аптечка"], summary="Добавить в аптечку", request=CabinetItemSerializer)
+    @extend_schema(
+        tags=["Аптечка"],
+        summary="Добавить в аптечку",
+        description=(
+            "Обязателен `drug_id` из справочника (`GET /api/catalog/drugs/?q=`). "
+            "Описание, инструкция и болезни берутся из базы лекарств/болезней, "
+            "а не хранятся отдельно в аптечке."
+        ),
+        request=CabinetItemSerializer,
+    )
     def post(self, request):
         s = CabinetItemSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
-        s.save()
-        return Response(s.data, status=status.HTTP_201_CREATED)
+        item = s.save()
+        item = _cabinet_queryset(request.user).get(pk=item.pk)
+        return Response(
+            CabinetItemSerializer(item, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CabinetItemDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _get(self, request, pk: int) -> CabinetItem:
-        return CabinetItem.objects.select_related("drug").get(pk=pk, user=request.user)
+        return _cabinet_queryset(request.user).get(pk=pk)
 
-    @extend_schema(tags=["Аптечка"], summary="Одна запись аптечки")
+    @extend_schema(tags=["Аптечка"], summary="Одна запись аптечки (данные из справочника)")
     def get(self, request, pk: int):
         obj = self._get(request, pk)
         return Response(CabinetItemSerializer(obj, context={"request": request}).data)
@@ -106,7 +167,8 @@ class CabinetItemDetailView(APIView):
         s = CabinetItemSerializer(obj, data=request.data, partial=True, context={"request": request})
         s.is_valid(raise_exception=True)
         s.save()
-        return Response(s.data)
+        obj = self._get(request, pk)
+        return Response(CabinetItemSerializer(obj, context={"request": request}).data)
 
     @extend_schema(tags=["Аптечка"], summary="Удалить из аптечки")
     def delete(self, request, pk: int):
@@ -262,20 +324,27 @@ class RecentDrugViewsView(APIView):
     @extend_schema(
         tags=["Аптечка"],
         summary="Недавно просмотренные лекарства",
+        description="Данные из справочника лекарств (catalog.Drug).",
         parameters=[OpenApiParameter(name="limit", type=int, required=False, description="По умолчанию 30")],
     )
     def get(self, request):
         limit = min(int(request.query_params.get("limit") or 30), 100)
         logs = (
-            DrugViewLog.objects.filter(user=request.user)
+            DrugViewLog.objects.filter(user=request.user, drug__is_active=True)
             .select_related("drug")
+            .prefetch_related(
+                Prefetch(
+                    "drug__diseases",
+                    queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+                )
+            )
             .order_by("-viewed_at")[:limit]
         )
         drugs = [log.drug for log in logs if log.drug_id]
         return Response(
             {
                 "title": "Ранее просмотренные лекарства",
-                "items": DrugSerializer(drugs, many=True, context={"request": request}).data,
+                "items": CabinetCatalogDrugSerializer(drugs, many=True, context={"request": request}).data,
             }
         )
 
@@ -303,7 +372,7 @@ class DrugRecordViewView(APIView):
         },
     )
     def post(self, request, pk: int):
-        drug = Drug.objects.filter(pk=pk).first()
+        drug = Drug.objects.filter(pk=pk, is_active=True).first()
         if not drug:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
         log, _created = DrugViewLog.objects.get_or_create(user=request.user, drug=drug)

@@ -1,34 +1,64 @@
 from __future__ import annotations
 
+import re
+
 from django.contrib.auth.models import AbstractBaseUser
 from django.core.files.uploadedfile import UploadedFile
 from django.db.models import Q
 
 from apps.catalog.models import Drug
 from apps.core.gemini import (
-    GeminiConfigError,
     recognize_drug_name_from_image,
     recognize_drug_names_from_image,
 )
-from apps.core.rutronix import RuTronixConfigError
 
 from .models import CabinetItem
 
+_NORMALIZE_RE = re.compile(r"[^\wа-яёА-ЯЁ]+", re.UNICODE)
 
-class CabinetRecognitionError(RuntimeError):
-    """Raised when AI provider is not configured or recognition fails."""
+
+def _normalize_name(name: str) -> str:
+    return _NORMALIZE_RE.sub(" ", (name or "").strip()).strip().casefold()
 
 
 def match_drug_by_name(name: str) -> tuple[Drug | None, int | None]:
+    """
+    Match only existing active drugs from catalog DB.
+    Does not create new Drug records.
+    """
     n = (name or "").strip()
     if not n or n.lower().startswith("не удалось"):
         return None, None
-    exact = Drug.objects.filter(name__iexact=n).first()
+
+    qs = Drug.objects.filter(is_active=True)
+
+    exact = qs.filter(name__iexact=n).first()
     if exact:
         return exact, exact.id
-    partial = Drug.objects.filter(name__icontains=n[: min(len(n), 80)]).order_by("name").first()
+
+    # «Валвир 500» → try leading token / startswith
+    token = n.split()[0]
+    if len(token) >= 3:
+        started = qs.filter(name__istartswith=token).order_by("name")
+        if started.count() == 1:
+            drug = started.first()
+            return drug, drug.id
+        # Prefer name that starts with full recognized string
+        started_full = qs.filter(name__istartswith=n[:80]).order_by("name").first()
+        if started_full:
+            return started_full, started_full.id
+
+    partial = qs.filter(name__icontains=n[: min(len(n), 80)]).order_by("name").first()
     if partial:
         return partial, partial.id
+
+    # Soft normalize: ignore punctuation differences
+    needle = _normalize_name(n)
+    if len(needle) >= 3:
+        for drug in qs.filter(name__icontains=needle.split()[0][:40]).order_by("name")[:30]:
+            if _normalize_name(drug.name) == needle or needle in _normalize_name(drug.name):
+                return drug, drug.id
+
     return None, None
 
 
@@ -37,18 +67,16 @@ def resolve_drug_from_name(
     *,
     source_file: UploadedFile | None = None,
 ) -> dict:
-    """Match catalog drug or create a new Drug card (TZ §7.14)."""
+    """
+    Resolve recognized name against catalog only.
+    Never creates orphan Drug rows — data must come from drugs DB.
+    """
     recognized = (name or "").strip()
     drug, pk = match_drug_by_name(recognized)
-    if drug is None and recognized and len(recognized) > 2 and not recognized.lower().startswith("не удалось"):
-        name_clean = recognized[:255]
-        drug = Drug.objects.filter(name__iexact=name_clean).first()
-        if not drug:
-            drug = Drug.objects.create(name=name_clean)
-        if source_file and not drug.image:
-            source_file.seek(0)
-            drug.image.save(source_file.name, source_file, save=True)
-        pk = drug.id
+    # Optional: attach photo to existing catalog card if empty
+    if drug and source_file and not drug.image:
+        source_file.seek(0)
+        drug.image.save(source_file.name, source_file, save=True)
     return {
         "recognized_name": recognized,
         "matched_drug": drug,
@@ -84,7 +112,7 @@ def add_recognized_to_cabinet(
     photo: UploadedFile | None = None,
 ) -> tuple[CabinetItem | None, bool]:
     """
-    Add recognized drug to user's cabinet.
+    Add recognized catalog drug to user's cabinet.
     Returns (cabinet_item, already_in_cabinet).
     """
     if drug is None:
