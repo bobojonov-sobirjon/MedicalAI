@@ -505,6 +505,8 @@ RUTRONIX_BASE_URL = os.getenv('RUTRONIX_BASE_URL', 'https://api.rutronix.ai').st
 USE_GEMINI_FALLBACK = os.getenv('USE_GEMINI_FALLBACK', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 # httpx: text chat (uniform timeout, seconds)
 RUTRONIX_CHAT_TIMEOUT_S = float(os.getenv('RUTRONIX_CHAT_TIMEOUT_S', '28'))
+# Помощник: soft-timeout ИИ (сек). Должен быть меньше клиентского таймаута Flutter (~15–20с).
+ASSISTANT_AI_SOFT_TIMEOUT_S = float(os.getenv('ASSISTANT_AI_SOFT_TIMEOUT_S', '10'))
 # Vision/OCR: split timeouts (httpx read = time to first byte + streaming body from RuTronix).
 # Default read 90s — OCR often needs 25–60s; cap read below Gunicorn --timeout (e.g. 120).
 RUTRONIX_VISION_WRITE_S = float(os.getenv('RUTRONIX_VISION_WRITE_S', '120'))
@@ -520,6 +522,8 @@ RUTRONIX_VISION_MAX_IMAGE_SIDE = int(os.getenv('RUTRONIX_VISION_MAX_IMAGE_SIDE',
 RUTRONIX_VISION_JPEG_QUALITY = int(os.getenv('RUTRONIX_VISION_JPEG_QUALITY', '82'))
 
 PSYCHOLOGY_EMAIL = os.getenv('PSYCHOLOGY_EMAIL', 'psychology@medic-ai.ru').strip()
+# Обратная связь из приложения — куда слать письма поддержки
+FEEDBACK_TO_EMAIL = os.getenv('FEEDBACK_TO_EMAIL', 'cybertime.syst@gmail.com').strip()
 FREE_TRIAL_DAYS = int(os.getenv('FREE_TRIAL_DAYS', '1'))
 FREE_TRIAL_MONTHS = int(os.getenv('FREE_TRIAL_MONTHS', '3'))
 SUBSCRIPTION_EXPIRY_WARNING_DAYS = os.getenv('SUBSCRIPTION_EXPIRY_WARNING_DAYS', '7,3,1')

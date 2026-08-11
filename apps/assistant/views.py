@@ -32,12 +32,25 @@ def _public_result(full_result: dict) -> dict:
     """
     Trim internal helper fields from run_diagnosis output.
     Flutter Variant 1: answer + disclaimer + sources.
+    possible_conditions — always list[str] (never Map dumps).
     """
-    ai = full_result.get("ai") or {}
+    from .services import format_possible_conditions
+
+    ai = dict(full_result.get("ai") or {})
+    raw_conditions = full_result.get("possible_conditions")
+    if raw_conditions is None:
+        raw_conditions = ai.get("possible_conditions") or []
+    conditions_text = format_possible_conditions(raw_conditions, limit=8)
+    # If already strings, format_possible_conditions keeps them.
+    if not conditions_text and isinstance(raw_conditions, list):
+        conditions_text = [str(x).strip() for x in raw_conditions if str(x).strip()][:8]
+
+    ai["possible_conditions"] = conditions_text
     return {
         "answer": full_result.get("answer") or ai.get("answer") or "",
         "disclaimer": full_result.get("disclaimer") or ai.get("disclaimer") or "",
         "sources": full_result.get("sources") or ai.get("sources") or [],
+        "possible_conditions": conditions_text,
         "ai": ai,
     }
 

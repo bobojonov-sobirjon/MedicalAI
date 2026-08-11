@@ -27,16 +27,24 @@ class DiseaseSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
 
 
 class DiseaseSearchSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
-    """Лёгкий ответ для автокомплита «История болезней» (без полного description)."""
+    """
+    Лёгкий ответ для автокомплита / полного списка пикера «История болезней».
+    Flutter: List<DiseaseCatalogItem> — нужны id + name (+ description).
+    """
 
+    description = serializers.SerializerMethodField()
     description_preview = serializers.SerializerMethodField()
 
     class Meta:
         model = Disease
-        fields = ("id", "name", "description_preview")
+        fields = ("id", "name", "description", "description_preview")
 
     def get_description_preview(self, obj: Disease) -> str:
         return description_preview(obj.description, max_chars=120)
+
+    def get_description(self, obj: Disease) -> str:
+        # Не тащим полный МКБ-текст на весь каталог — preview достаточно для пикера.
+        return self.get_description_preview(obj)
 
 
 class DrugMiniPublicSerializer(serializers.ModelSerializer):
@@ -141,11 +149,18 @@ class DiseaseNestedInDrugSerializer(_CleanDiseaseNameMixin, serializers.ModelSer
         cache = self.context.setdefault("_nested_disease_drugs", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        # Без diseases внутри — иначе бесконечная вложенность. Без полного instructions.
-        qs = obj.drugs.filter(is_active=True).only(
-            "id", "name", "description", "dosage", "image", "rating", "is_active"
-        ).order_by("name")[:20]
-        data = DrugMiniPublicSerializer(qs, many=True, context=self.context).data
+        try:
+            qs = obj.drugs.filter(is_active=True).only(
+                "id", "name", "description", "dosage", "image", "rating", "is_active"
+            ).order_by("name")[:20]
+            rows = list(qs)
+        except Exception:
+            rows = list(
+                obj.drugs.all()
+                .only("id", "name", "description", "dosage", "image", "rating")
+                .order_by("name")[:20]
+            )
+        data = DrugMiniPublicSerializer(rows, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
 
@@ -157,7 +172,7 @@ class DiseaseNestedInDrugSerializer(_CleanDiseaseNameMixin, serializers.ModelSer
 
 
 class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerializer):
-    """Карточка заболевания + список лекарств (с их болезнями для круговой навигации)."""
+    """Карточка заболевания + лёгкий список лекарств (без рекурсии)."""
 
     description_preview = serializers.SerializerMethodField()
     drugs = serializers.SerializerMethodField()
@@ -180,21 +195,25 @@ class DiseaseDetailSerializer(_CleanDiseaseNameMixin, serializers.ModelSerialize
         return description_preview(obj.description)
 
     def _drug_list(self, obj: Disease) -> list:
+        if self.context.get("skip_drugs"):
+            return []
         cache = self.context.setdefault("_disease_drug_payload", {})
         if obj.pk in cache:
             return cache[obj.pk]
-        qs = (
-            obj.drugs.filter(is_active=True)
-            .only("id", "name", "description", "instructions", "dosage", "image", "rating", "is_active")
-            .prefetch_related(
-                Prefetch(
-                    "diseases",
-                    queryset=Disease.objects.only("id", "name", "description").order_by("name"),
+        prefetched = getattr(obj, "_prefetched_objects_cache", {})
+        if "drugs" in prefetched:
+            rows = sorted(prefetched["drugs"], key=lambda d: d.name)[:40]
+        else:
+            try:
+                rows = list(
+                    obj.drugs.filter(is_active=True)
+                    .only("id", "name", "description", "dosage", "image", "rating")
+                    .order_by("name")[:40]
                 )
-            )
-            .order_by("name")[:40]
-        )
-        data = DrugNestedInDiseaseSerializer(qs, many=True, context=self.context).data
+            except Exception:
+                rows = list(obj.drugs.all().only("id", "name", "description", "dosage", "image", "rating").order_by("name")[:40])
+        # Mini cards only — no nested diseases (prevents hang/timeout).
+        data = DrugMiniPublicSerializer(rows, many=True, context=self.context).data
         cache[obj.pk] = data
         return data
 

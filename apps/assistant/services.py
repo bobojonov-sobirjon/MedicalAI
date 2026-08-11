@@ -40,6 +40,33 @@ MEDICAL_SOURCES: list[dict[str, str]] = [
 ]
 
 
+def format_condition_line(item: Any) -> str:
+    """Human-readable line — never dump dict keys (Flutter Map.toString() fix)."""
+    if isinstance(item, str):
+        return item.strip()
+    if not isinstance(item, dict):
+        return str(item).strip()
+    name = (item.get("name") or item.get("title") or "").strip()
+    rationale = (item.get("rationale") or item.get("description") or "").strip()
+    if name and rationale:
+        return f"{name} — {rationale}"
+    return name or rationale
+
+
+def format_possible_conditions(conditions: Any, *, limit: int = 8) -> list[str]:
+    """List of plain strings for UI «Возможные состояния»."""
+    if not isinstance(conditions, list):
+        return []
+    out: list[str] = []
+    for item in conditions:
+        line = format_condition_line(item)
+        if line:
+            out.append(line)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def build_medical_answer(ai: dict[str, Any], matched: list[dict[str, Any]]) -> str:
     """Собрать единый текст ответа для Flutter (поле answer)."""
     parts: list[str] = []
@@ -47,22 +74,9 @@ def build_medical_answer(ai: dict[str, Any], matched: list[dict[str, Any]]) -> s
     if summary:
         parts.append(summary)
 
-    conditions = ai.get("possible_conditions") or []
-    if isinstance(conditions, list) and conditions:
-        lines = []
-        for item in conditions[:6]:
-            if not isinstance(item, dict):
-                continue
-            name = (item.get("name") or "").strip()
-            rationale = (item.get("rationale") or "").strip()
-            if not name:
-                continue
-            if rationale:
-                lines.append(f"• {name} — {rationale}")
-            else:
-                lines.append(f"• {name}")
-        if lines:
-            parts.append("Возможные варианты:\n" + "\n".join(lines))
+    condition_lines = format_possible_conditions(ai.get("possible_conditions") or [], limit=6)
+    if condition_lines:
+        parts.append("Возможные варианты:\n" + "\n".join(f"• {line}" for line in condition_lines))
     elif matched:
         lines = [f"• {c['name']}" for c in matched[:6] if c.get("name")]
         if lines:
@@ -93,27 +107,35 @@ def build_medical_payload(ai: dict[str, Any], matched: list[dict[str, Any]]) -> 
 
 
 def _soft_ai_timeout_s() -> float:
-    """Client often times out at ~30s; return catalog before that."""
-    configured = float(getattr(settings, "RUTRONIX_CHAT_TIMEOUT_S", 60) or 60)
-    return max(8.0, min(configured - 5.0, 25.0))
+    """
+    Flutter often aborts around 15–20s («Response timeout»).
+    Soft-timeout must finish earlier and return catalog fallback.
+    """
+    configured = float(getattr(settings, "ASSISTANT_AI_SOFT_TIMEOUT_S", 10) or 10)
+    return max(5.0, min(configured, 14.0))
 
 
 def _catalog_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    """Prefer fast name match; description scan only if name matches empty."""
     q = symptoms.strip()
     if len(q) < 2:
         return []
-    tokens = [t for t in q.replace(",", " ").split() if len(t) >= 3][:6]
-    qs = Disease.objects.all()
+    tokens = [t for t in q.replace(",", " ").replace("\n", " ").split() if len(t) >= 3][:5]
+    qs = Disease.objects.all().only("id", "name", "description")
     cond = Q()
     for t in tokens:
-        cond |= Q(name__icontains=t) | Q(description__icontains=t)
+        cond |= Q(name__icontains=t)
     if not tokens:
-        cond = Q(name__icontains=q[:64]) | Q(description__icontains=q[:120])
+        cond = Q(name__icontains=q[:64])
     rows = list(qs.filter(cond).distinct().order_by("name")[:limit])
-    if not rows and q:
-        rows = list(
-            Disease.objects.filter(Q(name__icontains=q[:80]) | Q(description__icontains=q[:120])).order_by("name")[:limit]
-        )
+    if not rows:
+        needle = max(tokens, key=len) if tokens else q[:40]
+        if len(needle) >= 4:
+            rows = list(
+                Disease.objects.filter(Q(name__icontains=needle) | Q(description__icontains=needle))
+                .only("id", "name", "description")
+                .order_by("name")[:limit]
+            )
     return [{"id": d.id, "name": d.name, "description": (d.description or "")[:280]} for d in rows]
 
 
@@ -168,14 +190,8 @@ def _user_context_line(user: User) -> str:
 
 
 def _fallback_ai(catalog: list[dict[str, Any]], *, reason: str) -> dict[str, Any]:
-    conditions = [
-        {
-            "name": c["name"],
-            "rationale": "Совпадение по симптомам в локальном справочнике.",
-            "urgency": "soon",
-        }
-        for c in catalog[:5]
-    ]
+    # Store as strings immediately — UI «Возможные состояния» must not show Map keys.
+    conditions = [c["name"] for c in catalog[:5] if c.get("name")]
     return {
         "summary": (
             "Ниже — возможные варианты из справочника по вашим симптомам. "
@@ -239,18 +255,31 @@ FAQ: {faq_json}
     def _call_ai() -> dict[str, Any]:
         return generate_json(_SYSTEM, user_prompt, temperature=0.2)
 
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
+    # If AI provider is not configured — skip wait, answer from catalog immediately.
+    from apps.core.rutronix import rutronix_configured
+    from apps.core.gemini import gemini_configured, gemini_fallback_enabled
+
+    ai_ready = rutronix_configured() or (gemini_fallback_enabled() and gemini_configured())
+    if not ai_ready:
+        ai_error = "AI provider not configured"
+        ai = _fallback_ai(catalog, reason=ai_error)
+    else:
+        # CRITICAL: do not use `with ThreadPoolExecutor` — on exit it waits for the hung
+        # AI HTTP call (shutdown(wait=True)), and Flutter already timed out.
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
             future = pool.submit(_call_ai)
             ai = future.result(timeout=soft_timeout)
-    except FuturesTimeout:
-        logger.warning("AI diagnose soft-timeout after %.1fs — catalog fallback", soft_timeout)
-        ai_error = f"Timeout after {soft_timeout:.0f}s"
-        ai = _fallback_ai(catalog, reason=ai_error)
-    except (GeminiConfigError, RuntimeError, OSError, ValueError, Exception) as e:
-        logger.exception("AI diagnose failed: %s", e)
-        ai_error = f"{type(e).__name__}: {e}"
-        ai = _fallback_ai(catalog, reason=ai_error)
+        except FuturesTimeout:
+            logger.warning("AI diagnose soft-timeout after %.1fs — catalog fallback", soft_timeout)
+            ai_error = f"Timeout after {soft_timeout:.0f}s"
+            ai = _fallback_ai(catalog, reason=ai_error)
+        except (GeminiConfigError, RuntimeError, OSError, ValueError, Exception) as e:
+            logger.exception("AI diagnose failed: %s", e)
+            ai_error = f"{type(e).__name__}: {e}"
+            ai = _fallback_ai(catalog, reason=ai_error)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     match_ids = ai.get("match_catalog_ids") or []
     if not isinstance(match_ids, list):
@@ -264,21 +293,34 @@ FAQ: {faq_json}
         ai["possible_conditions"] = _fallback_ai(catalog, reason="empty_ai").get("possible_conditions")
 
     medical = build_medical_payload(ai, matched)
+    # UI-safe strings (no {name:…, rationale:…} Map dumps in Flutter).
+    conditions_raw = ai.get("possible_conditions") or []
+    conditions_text = format_possible_conditions(conditions_raw, limit=8)
+    if not conditions_text and matched:
+        conditions_text = [c["name"] for c in matched[:8] if c.get("name")]
 
     return {
         "symptoms_resolved": symptoms_resolved,
         "body_parts_resolved": body_parts_resolved,
-        "catalog_candidates": catalog,
+        "catalog_candidates": [
+            {"id": c["id"], "name": c["name"], "description": c.get("description", "")} for c in catalog
+        ],
         "faq_hits": faq,
-        "catalog_matched": matched,
-        # Flutter Variant 1 — основной блок для UI
+        "catalog_matched": [
+            {"id": c["id"], "name": c["name"], "description": c.get("description", "")} for c in matched
+        ],
+        # Top-level for Flutter «Возможные состояния» — только читаемые строки.
+        "possible_conditions": conditions_text,
         "answer": medical["answer"],
         "disclaimer": medical["disclaimer"],
         "sources": medical["sources"],
         "ai": {
             "summary": ai.get("summary", ""),
-            "possible_conditions": ai.get("possible_conditions", []),
-            "suggested_next_steps": ai.get("suggested_next_steps", []),
+            # IMPORTANT: strings only — Flutter must not render Map.toString().
+            "possible_conditions": conditions_text,
+            "suggested_next_steps": [
+                s for s in (ai.get("suggested_next_steps") or []) if isinstance(s, str) and s.strip()
+            ][:8],
             "disclaimer": medical["disclaimer"],
             "answer": medical["answer"],
             "sources": medical["sources"],

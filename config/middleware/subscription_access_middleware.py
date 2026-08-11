@@ -13,14 +13,6 @@ class SubscriptionAccessMiddleware:
     Trial / paid users get full API access.
     """
 
-    HISTORY_ONLY_PREFIXES = (
-        "/api/me/disease-records/",
-        "/api/me/doctor-visits/",
-        "/api/me/analyses/",
-        "/api/me/prescriptions/",
-        # History create flow needs disease autocomplete from catalog.
-        "/api/catalog/diseases/",
-    )
     ALWAYS_ALLOWED_PREFIXES = (
         "/api/auth/",
         "/api/billing/",
@@ -28,6 +20,14 @@ class SubscriptionAccessMiddleware:
         "/api/content/config/",
         "/api/content/pages/",
         "/api/faq/",
+        # Справочник болезней нужен и для истории, и для каталога — не режем paywall'ом.
+        "/api/catalog/diseases/",
+    )
+    HISTORY_ONLY_PREFIXES = (
+        "/api/me/disease-records/",
+        "/api/me/doctor-visits/",
+        "/api/me/analyses/",
+        "/api/me/prescriptions/",
     )
 
     def __init__(self, get_response):

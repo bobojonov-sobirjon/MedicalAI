@@ -108,9 +108,10 @@ class CityListView(APIView):
         tags=["Медучреждения"],
         summary="Список городов (А–Я)",
         description=(
-            "Список крупных городов России для фильтра аптек/больниц. "
-            "Передайте `q` для поиска по подстроке (например `?q=екат` → Екатеринбург). "
-            "Без `q` возвращаются только города из справочника (~137), без OSM-посёлков."
+            "Flutter city picker loads the list **once without `q`** and filters locally.\n"
+            "Therefore without `q` the API returns **all cities that have facilities** "
+            "(incl. small towns like Янаул), not only ~137 majors.\n"
+            "With `q` — server-side substring search."
         ),
         parameters=[
             OpenApiParameter(
@@ -123,29 +124,85 @@ class CityListView(APIView):
                 name="level",
                 type=str,
                 required=False,
-                description="region | city | district (по умолчанию city+region)",
+                description="region | city | district (по умолчанию city)",
             ),
-            OpenApiParameter(name="limit", required=False, type=int, description="Лимит (по умолчанию 500, максимум 2000)"),
+            OpenApiParameter(name="limit", required=False, type=int, description="Лимит (по умолчанию 200/500)"),
+            OpenApiParameter(
+                name="with_facilities",
+                type=bool,
+                required=False,
+                description="true — только города, где есть активные учреждения",
+            ),
         ],
     )
     def get(self, request):
-        q = (request.query_params.get("q") or "").strip()
-        try:
-            limit = int(request.query_params.get("limit") or (200 if not q else 500))
-        except (TypeError, ValueError):
-            limit = 200 if not q else 500
-        limit = min(max(limit, 1), 2000)
+        from django.db.models import Count, Q
 
-        rows = (
-            City.objects.filter(geo_level=City.GeoLevel.CITY, sort_order__gt=0)
-            .order_by("sort_order", "name")
-        )
+        from apps.medic.importers.city_normalize import is_blocked_city_name
+        from apps.medic.city_quality import is_latin_only_city_name
+
+        q = (request.query_params.get("q") or "").strip()
+        level = (request.query_params.get("level") or "city").strip().lower()
+        with_facilities_raw = (request.query_params.get("with_facilities") or "").strip().lower()
+
+        level_map = {
+            "region": City.GeoLevel.REGION,
+            "city": City.GeoLevel.CITY,
+            "district": City.GeoLevel.DISTRICT,
+        }
+        geo_level = level_map.get(level, City.GeoLevel.CITY)
+
+        # Flutter city sheet: loads GET /geo/cities/ once WITHOUT q, then filters locally.
+        # So without q we must return ALL towns that have facilities (incl. Янаул),
+        # not only the curated ~137 majors — otherwise «яна» finds nothing.
+        full_catalog = not q
+        if with_facilities_raw in {"1", "true", "yes", "y"}:
+            with_facilities = True
+        elif with_facilities_raw in {"0", "false", "no", "n"}:
+            with_facilities = False
+        else:
+            with_facilities = True  # default: only cities with pharmacies/hospitals
+
+        try:
+            default_limit = 20000 if full_catalog else 500
+            limit = int(request.query_params.get("limit") or default_limit)
+        except (TypeError, ValueError):
+            limit = 20000 if full_catalog else 500
+        limit = min(max(limit, 1), 30000)
+
+        rows = City.objects.filter(geo_level=geo_level)
         if q:
             rows = rows.filter(name__icontains=q)
 
-        return Response(
-            [{"id": c.id, "name": c.name, "geo_level": c.geo_level} for c in rows[:limit]]
+        rows = rows.annotate(
+            facilities_count=Count(
+                "facilities",
+                filter=Q(facilities__is_active=True),
+                distinct=True,
+            )
         )
+        if with_facilities:
+            rows = rows.filter(facilities_count__gt=0)
+
+        # Majors first, then A–Я
+        rows = rows.order_by("-sort_order", "name")
+
+        payload = []
+        for c in rows.iterator(chunk_size=1000):
+            if is_blocked_city_name(c.name) or is_latin_only_city_name(c.name):
+                continue
+            payload.append(
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "geo_level": c.geo_level,
+                    "facilities_count": int(getattr(c, "facilities_count", 0) or 0),
+                }
+            )
+            if len(payload) >= limit:
+                break
+
+        return Response(payload)
 
 
 def _facility_image_url(request, obj: "MedicalFacility") -> str | None:
@@ -786,26 +843,59 @@ class FeedbackCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     class FeedbackCreateSerializer(serializers.Serializer):
-        message = serializers.CharField(max_length=8000)
-        subject = serializers.CharField(max_length=255, required=False, allow_blank=True)
-        email = serializers.EmailField(required=False, allow_blank=True)
+        message = serializers.CharField(
+            max_length=8000,
+            help_text="Текст письма (поле «Письмо» / «Сообщение»).",
+        )
+        email = serializers.EmailField(
+            required=True,
+            help_text="Почта обратной связи — куда можно ответить пользователю.",
+        )
+        subject = serializers.CharField(
+            max_length=255,
+            required=False,
+            allow_blank=True,
+            help_text="Тема (необязательно). По умолчанию «Обратная связь».",
+        )
 
     @extend_schema(
         tags=["Поддержка"],
-        summary="Обратная связь (письмо + запись в БД)",
+        summary="Отправить обратную связь",
+        description=(
+            "Сохраняет обращение в БД и отправляет письмо на `FEEDBACK_TO_EMAIL` "
+            "(по умолчанию cybertime.syst@gmail.com).\n\n"
+            "Кнопка в UI: **Отправить** (не «Сохранить»).\n"
+            "Обязательные поля: `email` (Почта обратной связи), `message` (Письмо)."
+        ),
         request=FeedbackCreateSerializer,
-        responses={201: inline_serializer(name="FeedbackOk", fields={"ok": serializers.BooleanField()})},
+        responses={
+            201: inline_serializer(
+                name="FeedbackOk",
+                fields={
+                    "ok": serializers.BooleanField(),
+                    "detail": serializers.CharField(),
+                    "ticket_id": serializers.IntegerField(),
+                },
+            )
+        },
     )
     def post(self, request):
         s = self.FeedbackCreateSerializer(data=request.data)
         s.is_valid(raise_exception=True)
-        FeedbackTicket.objects.create(
+        ticket = FeedbackTicket.objects.create(
             user=request.user,
-            email=s.validated_data.get("email") or (request.user.email or ""),
-            subject=s.validated_data.get("subject") or "",
-            message=s.validated_data["message"],
+            email=(s.validated_data.get("email") or "").strip(),
+            subject=(s.validated_data.get("subject") or "").strip() or "Обратная связь",
+            message=s.validated_data["message"].strip(),
         )
-        return Response({"ok": True}, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "ok": True,
+                "detail": "Сообщение отправлено.",
+                "ticket_id": ticket.id,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PsychologyInquiryView(APIView):
