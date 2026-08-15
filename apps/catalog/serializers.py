@@ -4,7 +4,7 @@ from django.db.models import Prefetch
 from rest_framework import serializers
 
 from .models import BodyPart, Disease, Drug, Symptom
-from .utils import clean_disease_display_name, description_preview
+from .utils import clean_disease_display_name, clean_display_text, description_preview
 
 
 class _CleanDiseaseNameMixin:
@@ -12,6 +12,26 @@ class _CleanDiseaseNameMixin:
         data = super().to_representation(instance)
         if "name" in data:
             data["name"] = clean_disease_display_name(data.get("name") or "")
+        return data
+
+
+class _CleanDrugTextMixin:
+    """Unescape &reg; / &amp; in drug names and short texts for Flutter."""
+
+    _TEXT_KEYS = (
+        "name",
+        "description",
+        "description_preview",
+        "instructions",
+        "instructions_preview",
+        "dosage",
+    )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for key in self._TEXT_KEYS:
+            if key in data and isinstance(data[key], str):
+                data[key] = clean_display_text(data[key])
         return data
 
 
@@ -47,7 +67,7 @@ class DiseaseSearchSerializer(_CleanDiseaseNameMixin, serializers.ModelSerialize
         return self.get_description_preview(obj)
 
 
-class DrugMiniPublicSerializer(serializers.ModelSerializer):
+class DrugMiniPublicSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
     """Краткая карточка препарата (без вложенных болезней)."""
 
     description_preview = serializers.SerializerMethodField()
@@ -236,7 +256,23 @@ class BodyPartSerializer(serializers.ModelSerializer):
         fields = ("id", "code", "label", "sort_order", "created_at", "updated_at")
 
 
-class DrugListSerializer(serializers.ModelSerializer):
+class DrugPickerSerializer(serializers.ModelSerializer):
+    """Минимальный список для модалки «Выберите препараты» (история болезней)."""
+
+    class Meta:
+        model = Drug
+        fields = ("id", "name", "dosage")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if "name" in data:
+            data["name"] = clean_display_text(data.get("name") or "")
+        if "dosage" in data and isinstance(data["dosage"], str):
+            data["dosage"] = clean_display_text(data["dosage"])
+        return data
+
+
+class DrugListSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
     """Лёгкая карточка для списка лекарств (без вложенных diseases — они в detail)."""
 
     description_preview = serializers.SerializerMethodField()
@@ -281,7 +317,7 @@ class DrugListSerializer(serializers.ModelSerializer):
         return obj.pk in self.context[cache_key]
 
 
-class DrugSerializer(serializers.ModelSerializer):
+class DrugSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
     """Полная карточка лекарства + болезни (у болезней сразу есть drugs для круга)."""
 
     diseases = serializers.SerializerMethodField()

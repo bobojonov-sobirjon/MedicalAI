@@ -16,6 +16,7 @@ from .serializers import (
     DiseaseSearchSerializer,
     DiseaseSerializer,
     DrugListSerializer,
+    DrugPickerSerializer,
     DrugSerializer,
     SymptomSerializer,
 )
@@ -186,9 +187,30 @@ class PublicDrugListView(APIView):
 
     @extend_schema(
         tags=["Лекарства"],
-        summary="Список лекарств (pagination + filters)",
+        summary="Список лекарств (тот же каталог для «Лекарства» и истории болезней)",
+        description=(
+            "Раздел **Лекарства** и модалка **«Выберите препараты»** (история болезней) "
+            "должны использовать **этот же** endpoint.\n\n"
+            "**Правильно (как поиск в «Лекарства»):**\n"
+            "`GET /api/catalog/drugs/?q=Креон&page=1&page_size=50`\n\n"
+            "**Либо полный лёгкий список для локального фильтра в модалке:**\n"
+            "`GET /api/catalog/drugs/?picker=1` → JSON **array** `[{id,name,dosage}, ...]`\n\n"
+            "**Нельзя:** брать только `drugs` из карточки болезни "
+            "(`GET /catalog/diseases/{id}/`) — там лишь связанные препараты, не весь каталог.\n"
+            "**Нельзя:** грузить только `page=1` без `q` и фильтровать локально — список неполный.\n"
+            "Поиск: `q` / `search` / `name` / `query`."
+        ),
         parameters=[
-            OpenApiParameter(name="q", required=False, type=str),
+            OpenApiParameter(name="q", required=False, type=str, description="Поиск по названию/дозе"),
+            OpenApiParameter(name="search", required=False, type=str, description="Алиас q"),
+            OpenApiParameter(name="name", required=False, type=str, description="Алиас q"),
+            OpenApiParameter(name="query", required=False, type=str, description="Алиас q"),
+            OpenApiParameter(
+                name="picker",
+                required=False,
+                type=bool,
+                description="true — полный лёгкий список (array) для модалки истории болезней",
+            ),
             OpenApiParameter(name="page", required=False, type=int),
             OpenApiParameter(name="page_size", required=False, type=int),
             OpenApiParameter(name="limit", required=False, type=int),
@@ -205,6 +227,7 @@ class PublicDrugListView(APIView):
         from django.db.models import Count
 
         q = _search_query(request)
+        picker = _bool_param(request, "picker") is True
         letter = _query_param(request, "letter")
         ordering = _query_param(request, "ordering") or "name"
         disease_id_raw = _query_param(request, "disease_id")
@@ -217,6 +240,19 @@ class PublicDrugListView(APIView):
             ordering = "name"
 
         qs = _active_drugs_qs().defer("instructions")
+
+        # History modal: full catalog as JSON array (same source as «Лекарства»).
+        if picker and not disease_id_raw:
+            try:
+                limit = min(int(request.query_params.get("limit") or 50000), 50000)
+            except (TypeError, ValueError):
+                limit = 50000
+            if q:
+                qs = qs.filter(Q(name__icontains=q) | Q(dosage__icontains=q)).order_by("name")
+            else:
+                qs = qs.order_by("name")
+            rows = list(qs.only("id", "name", "dosage")[:limit])
+            return Response(DrugPickerSerializer(rows, many=True).data)
 
         need_disease_count = has_diseases is not None or include_diseases
         if need_disease_count:

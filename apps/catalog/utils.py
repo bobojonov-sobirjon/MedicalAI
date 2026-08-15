@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import html
 import re
 
 _PREVIEW_SENTENCE_RE = re.compile(r"(?<=[.!?…])\s+")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def clean_display_text(text: str) -> str:
+    """Decode HTML entities (&reg; → ®) and strip leftover tags for mobile UI."""
+    raw = html.unescape((text or "").replace("\xa0", " "))
+    raw = _HTML_TAG_RE.sub("", raw)
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+
 _LATIN_BRACKET_RE = re.compile(r"\s*\[[^\[\]]*[A-Za-z][^\[\]]*\]")
 _PAREN_RE = re.compile(r"\s*\(([^)]*)\)")
 _MNN_RE = re.compile(r"МНН:\s*([^.\n;]+)", re.IGNORECASE)
@@ -62,7 +74,7 @@ def split_mnn_parts(mnn: str) -> list[str]:
 
 def description_preview(text: str, *, max_chars: int = 320) -> str:
     """First ~3 lines for mobile cards («Подробнее» opens full description)."""
-    raw = re.sub(r"\s+", " ", (text or "").strip())
+    raw = clean_display_text(text)
     if not raw:
         return ""
     if len(raw) <= max_chars:

@@ -1,20 +1,29 @@
-# Frontend: Обратная связь (Отправить)
+# Обратная связь — что сделано (Frontend)
 
-## UI (mijoz talabi)
+## Требования UI
 
-| UI | Qiymat |
-|----|--------|
-| Tugma | **Отправить** (не «Сохранить») |
-| Maydon 1 | **Почта обратной связи** → API `email` |
-| Maydon 2 | **Письмо / Сообщение** → API `message` |
+| Было | Нужно |
+|------|--------|
+| Кнопка **«Сохранить»** | Кнопка **«Отправить»** |
+| Только поле «Письмо» | + поле **«Почта обратной связи»** |
+
+Экран: **Обратная связь**.
+
+### Поля на экране
+
+1. **Почта обратной связи** — email пользователя (обязательно).
+2. **Письмо** / placeholder «Сообщение...» — текст обращения (обязательно).
+3. Кнопка **Отправить**.
+
+---
 
 ## API
 
 `POST /api/support/feedback/`
 
-Auth: `Authorization: Bearer <access_token>`
+**Auth:** `Authorization: Bearer <access_token>`
 
-### Body
+### Request body
 
 ```json
 {
@@ -24,11 +33,11 @@ Auth: `Authorization: Bearer <access_token>`
 }
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `email` | **yes** | Почта обратной связи (Reply-To) |
-| `message` | **yes** | Текст письма |
-| `subject` | no | Тема; default `Обратная связь` |
+| Поле | Обязательно | Описание |
+|------|-------------|----------|
+| `email` | да | Почта обратной связи |
+| `message` | да | Текст письма |
+| `subject` | нет | Тема; по умолчанию `Обратная связь` |
 
 ### Response `201`
 
@@ -40,18 +49,32 @@ Auth: `Authorization: Bearer <access_token>`
 }
 ```
 
-### Backend behavior
+### Ошибки
 
-1. Yozuv `FeedbackTicket` jadvaliga saqlanadi (admin da ko‘rinadi).
-2. Email yuboriladi: **`FEEDBACK_TO_EMAIL`** = `cybertime.syst@gmail.com` (default).
-3. `Reply-To` = foydalanuvchi kiritgan `email`.
+| Код | Когда |
+|-----|--------|
+| `400` | Пустой / невалидный `email` или пустой `message` |
+| `401` | Нет / просрочен токен |
 
-## Flutter qisqa
+---
+
+## Flutter (пример)
 
 ```dart
+// UI: label кнопки = «Отправить»
 await api.post('/support/feedback/', data: {
   'email': feedbackEmailController.text.trim(),
   'message': messageController.text.trim(),
+  // 'subject': 'Обратная связь', // опционально
 });
-// button label: Отправить
 ```
+
+---
+
+## Backend (кратко для FE)
+
+После успешного `POST` обращение сохраняется на сервере и уходит на почту поддержки  
+**`cybertime.syst@gmail.com`**.  
+В письме **Reply-To** = значение из поля «Почта обратной связи».
+
+FE SMTP не настраивает — только шлёт `email` + `message` на API.
