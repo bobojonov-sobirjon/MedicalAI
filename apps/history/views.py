@@ -49,11 +49,75 @@ _PRESCRIPTION_MEDIA_ERR = (
 
 def _prescription_save_error_response(exc: BaseException) -> Response:
     if isinstance(exc, (OSError, PermissionError)):
-        return Response({"detail": f"{_PRESCRIPTION_MEDIA_ERR} ({exc!s})"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"detail": f"{_PRESCRIPTION_MEDIA_ERR} ({exc!s})"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 _MULTIPART_PARSERS = (MultiPartParser, FormParser, JSONParser)
+
+
+class MyHistoryDrugPickerView(APIView):
+    """
+    GET for UI «Препараты» on the history form.
+    Same catalog as «Лекарства»; allowed under history_only paywall
+    (path starts with /api/me/disease-records/).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["История здоровья"],
+        summary="Поиск препаратов для формы истории (как раздел «Лекарства»)",
+        description=(
+            "Экран «Добавить запись о заболевании» → поле **Препараты**.\n\n"
+            "Это **не** часть POST. Сначала GET (поиск), потом POST с `drug_ids`.\n\n"
+            "- `GET ?q=Креон` — поиск (array)\n"
+            "- `GET` без `q` — полный лёгкий каталог (array) для локального фильтра\n\n"
+            "Тот же источник, что `GET /api/catalog/drugs/`."
+        ),
+        parameters=[
+            OpenApiParameter(name="q", required=False, type=str, description="Поиск по названию/дозе"),
+            OpenApiParameter(name="search", required=False, type=str),
+            OpenApiParameter(name="name", required=False, type=str),
+            OpenApiParameter(name="query", required=False, type=str),
+            OpenApiParameter(name="limit", required=False, type=int),
+        ],
+    )
+    def get(self, request):
+        from django.db.models import Case, IntegerField, Q, Value, When
+
+        from apps.catalog.serializers import DrugPickerSerializer
+        from apps.catalog.views import _active_drugs_qs, _search_query
+
+        q = _search_query(request)
+        try:
+            limit = min(int(request.query_params.get("limit") or (100 if q else 50000)), 50000)
+        except (TypeError, ValueError):
+            limit = 100 if q else 50000
+
+        qs = _active_drugs_qs().only("id", "name", "dosage")
+        if q:
+            qs = (
+                qs.filter(Q(name__icontains=q) | Q(dosage__icontains=q))
+                .annotate(
+                    _rank=Case(
+                        When(name__iexact=q, then=Value(0)),
+                        When(name__istartswith=q, then=Value(1)),
+                        When(name__icontains=q, then=Value(2)),
+                        default=Value(3),
+                        output_field=IntegerField(),
+                    )
+                )
+                .order_by("_rank", "name")
+            )
+        else:
+            qs = qs.order_by("name")
+
+        rows = list(qs[:limit])
+        return Response(DrugPickerSerializer(rows, many=True).data)
 
 
 class MyDiseaseRecordListCreateView(APIView):
@@ -105,9 +169,16 @@ class MyDiseaseRecordListCreateView(APIView):
         tags=["История здоровья"],
         summary="Создать запись о болезни",
         description=(
-            "Создаёт запись о болезни для текущего пользователя.\n\n"
-            "Request body: `multipart/form-data` (как PATCH /api/auth/me/): все поля в форме.\n"
-            "Связанные сущности (визиты/анализы/рецепты) добавляйте через отдельные endpoints."
+            "Экран «Добавить запись о заболевании».\n\n"
+            "**Поиск в полях формы — отдельные GET (не внутри POST):**\n"
+            "- Профиль → уже известные profiles API\n"
+            "- Название болезни → `GET /api/catalog/diseases/?q=`\n"
+            "- Препараты → `GET /api/me/disease-records/drugs/?q=Креон` "
+            "(тот же каталог, что раздел «Лекарства»)\n\n"
+            "Затем POST с выбранными id:\n"
+            "`disease_id`, `drug_ids`, `subject_user_id`, `date_of_illness`, `symptoms`.\n\n"
+            "Визиты/анализы/рецепты — отдельные endpoints после создания записи.\n"
+            "Body: `multipart/form-data` или JSON."
         ),
         request={"multipart/form-data": DiseaseRecordUpsertSerializer},
         responses={201: DiseaseRecordDetailSerializer},
@@ -117,8 +188,11 @@ class MyDiseaseRecordListCreateView(APIView):
         s.is_valid(raise_exception=True)
         with transaction.atomic():
             record = s.save(user=request.user)
-            if "drugs" in s.validated_data:
-                record.drugs.set(s.validated_data["drugs"])
+        record = (
+            DiseaseRecord.objects.select_related("disease", "subject_user")
+            .prefetch_related("drugs", "doctor_visits", "analyses", "prescriptions")
+            .get(pk=record.pk)
+        )
         return Response(
             DiseaseRecordDetailSerializer(record, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -167,8 +241,7 @@ class MyDiseaseRecordDetailView(APIView):
         s.is_valid(raise_exception=True)
         with transaction.atomic():
             record = s.save()
-            if "drugs" in s.validated_data:
-                record.drugs.set(s.validated_data["drugs"])
+        record = self._get_obj(request, record.pk)
         return Response(DiseaseRecordDetailSerializer(record, context={"request": request}).data)
 
     @extend_schema(tags=["История здоровья"], summary="Удалить мою запись о болезни", description="Удаляет запись текущего пользователя.")

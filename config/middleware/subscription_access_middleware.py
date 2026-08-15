@@ -20,8 +20,9 @@ class SubscriptionAccessMiddleware:
         "/api/content/config/",
         "/api/content/pages/",
         "/api/faq/",
-        # Справочник болезней нужен и для истории, и для каталога — не режем paywall'ом.
+        # Справочники для пикеров истории (болезнь + препараты) — не режем paywall'ом.
         "/api/catalog/diseases/",
+        "/api/catalog/drugs/",
     )
     HISTORY_ONLY_PREFIXES = (
         "/api/me/disease-records/",

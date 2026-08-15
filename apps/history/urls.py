@@ -8,6 +8,7 @@ from .views import (
     MyDoctorVisitDetailView,
     MyAnalysisListCreateView,
     MyAnalysisDetailView,
+    MyHistoryDrugPickerView,
     MyPrescriptionListCreateView,
     MyPrescriptionDetailView,
 )
@@ -16,6 +17,7 @@ from .views import (
 urlpatterns = [
     path("me/disease-records/", MyDiseaseRecordListCreateView.as_view(), name="my-disease-records"),
     # Static subpaths must be before /<int:pk>/ so they are not captured as integer pk.
+    path("me/disease-records/drugs/", MyHistoryDrugPickerView.as_view(), name="my-history-drug-picker"),
     path("me/disease-records/analyses/ocr/", AnalysisOcrFormView.as_view(), name="my-analysis-ocr-form"),
     path("me/disease-records/analyses/", MyAnalysisListCreateView.as_view(), name="my-analyses"),
     path("me/disease-records/prescriptions/", MyPrescriptionListCreateView.as_view(), name="my-prescriptions"),

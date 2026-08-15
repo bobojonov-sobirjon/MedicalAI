@@ -245,19 +245,84 @@ class DiseaseRecordDetailSerializer(serializers.ModelSerializer):
         return PrescriptionSerializer(obj.prescriptions.all(), many=True, context={"request": self.context["request"]}).data
 
 
+class FlexibleDrugIdsField(serializers.Field):
+    """
+    Accept drug_ids from JSON list or multipart form:
+    - [1, 2, 3]
+    - "1,2,3"
+    - '["1","2"]'
+    - single "12"
+    """
+
+    default_error_messages = {
+        "invalid": "Некорректный список drug_ids.",
+        "not_found": "Препарат id={pk} не найден в каталоге.",
+    }
+
+    def to_representation(self, value):
+        if hasattr(value, "all"):
+            return [obj.pk for obj in value.all()]
+        return value
+
+    def to_internal_value(self, data):
+        if data is None or data == "":
+            return []
+        if isinstance(data, str):
+            raw = data.strip()
+            if raw.startswith("["):
+                import json
+
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise serializers.ValidationError(self.error_messages["invalid"]) from exc
+            else:
+                data = [p.strip() for p in raw.split(",") if p.strip()]
+        if isinstance(data, (int, float)):
+            data = [int(data)]
+        if not isinstance(data, (list, tuple)):
+            data = [data]
+        ids: list[int] = []
+        for item in data:
+            try:
+                ids.append(int(item))
+            except (TypeError, ValueError) as exc:
+                raise serializers.ValidationError(self.error_messages["invalid"]) from exc
+        if not ids:
+            return []
+        found = {d.pk: d for d in Drug.objects.filter(pk__in=ids)}
+        missing = [pk for pk in ids if pk not in found]
+        if missing:
+            raise serializers.ValidationError(
+                self.error_messages["not_found"].format(pk=missing[0])
+            )
+        # preserve order
+        return [found[pk] for pk in ids]
+
+
 class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
     disease_id = serializers.PrimaryKeyRelatedField(
-        source="disease", queryset=Disease.objects.all(), required=False, allow_null=True
+        source="disease",
+        queryset=Disease.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="UI «Название болезни» → id из GET /api/catalog/diseases/?q=",
     )
     subject_user_id = serializers.PrimaryKeyRelatedField(
         source="subject_user",
         queryset=CustomUser.objects.none(),
         required=False,
         allow_null=True,
-        help_text="Кому относится запись: вы или привязанный профиль. По умолчанию — вы.",
+        help_text="UI «Профиль» → id профиля (вы или член семьи).",
     )
-    drug_ids = serializers.PrimaryKeyRelatedField(
-        source="drugs", queryset=Drug.objects.all(), many=True, required=False
+    drug_ids = FlexibleDrugIdsField(
+        source="drugs",
+        required=False,
+        help_text=(
+            "UI «Препараты» → id из GET /api/me/disease-records/drugs/?q= "
+            "или GET /api/catalog/drugs/?q= (тот же каталог, что раздел «Лекарства»). "
+            "JSON: [1,2] или form: 1,2,3."
+        ),
     )
 
     class Meta:
@@ -271,9 +336,13 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
             "drug_ids",
         )
         extra_kwargs = {
-            "date_of_illness": {"help_text": "Disease start date (YYYY-MM-DD)."},
-            "title": {"help_text": "Disease title (free text)."},
-            "symptoms": {"help_text": "Symptoms description (free text)."},
+            "date_of_illness": {"help_text": "UI «Дата начала болезни» (YYYY-MM-DD)."},
+            "title": {
+                "help_text": "Свободный заголовок (опционально). Каталог болезни — в disease_id.",
+                "required": False,
+                "allow_blank": True,
+            },
+            "symptoms": {"help_text": "UI «Симптомы»."},
         }
 
     def __init__(self, *args, **kwargs):
@@ -299,6 +368,20 @@ class DiseaseRecordUpsertSerializer(serializers.ModelSerializer):
         if FamilyLink.objects.filter(owner=u, member=value).exists():
             return value
         raise serializers.ValidationError("Нельзя привязать эту запись к выбранному пользователю.")
+
+    def create(self, validated_data):
+        drugs = validated_data.pop("drugs", None)
+        record = super().create(validated_data)
+        if drugs is not None:
+            record.drugs.set(drugs)
+        return record
+
+    def update(self, instance, validated_data):
+        drugs = validated_data.pop("drugs", None)
+        record = super().update(instance, validated_data)
+        if drugs is not None:
+            record.drugs.set(drugs)
+        return record
 
 
 class DoctorVisitSerializer(serializers.ModelSerializer):
