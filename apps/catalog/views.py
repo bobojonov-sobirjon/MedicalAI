@@ -370,6 +370,11 @@ class PublicDrugDetailView(APIView):
     @extend_schema(
         tags=["Лекарства"],
         summary="Получить лекарство",
+        description=(
+            "Полная карточка. Поле `sections` — блоки инструкции как у Vidal "
+            "(форма выпуска, действие, показания, дозы, побочки…) для спойлеров в UI. "
+            "Пустые блоки не возвращаются."
+        ),
         parameters=[
             OpenApiParameter(name="include_related", required=False, type=bool),
         ],

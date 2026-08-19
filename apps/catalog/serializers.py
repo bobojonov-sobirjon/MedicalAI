@@ -318,13 +318,15 @@ class DrugListSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
 
 
 class DrugSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
-    """Полная карточка лекарства + болезни (у болезней сразу есть drugs для круга)."""
+    """Полная карточка лекарства + болезни + секции инструкции (спойлеры как у Vidal)."""
 
     diseases = serializers.SerializerMethodField()
     related_diseases = serializers.SerializerMethodField()
     in_my_cabinet = serializers.SerializerMethodField()
     description_preview = serializers.SerializerMethodField()
     instructions_preview = serializers.SerializerMethodField()
+    inn = serializers.SerializerMethodField()
+    sections = serializers.SerializerMethodField()
 
     class Meta:
         model = Drug
@@ -336,8 +338,10 @@ class DrugSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
             "instructions",
             "instructions_preview",
             "dosage",
+            "inn",
             "image",
             "rating",
+            "sections",
             "diseases",
             "related_diseases",
             "in_my_cabinet",
@@ -371,6 +375,21 @@ class DrugSerializer(_CleanDrugTextMixin, serializers.ModelSerializer):
 
     def get_instructions_preview(self, obj: Drug) -> str:
         return description_preview(obj.instructions, max_chars=200)
+
+    def get_inn(self, obj: Drug) -> str:
+        from .utils import extract_drug_mnn
+
+        return extract_drug_mnn(obj.description or "") or extract_drug_mnn(obj.instructions or "")
+
+    def get_sections(self, obj: Drug) -> list:
+        from .instruction_sections import build_drug_sections
+
+        return build_drug_sections(
+            name=obj.name or "",
+            description=obj.description or "",
+            instructions=obj.instructions or "",
+            dosage=obj.dosage or "",
+        )
 
     def get_in_my_cabinet(self, obj: Drug) -> bool:
         request = self.context.get("request")

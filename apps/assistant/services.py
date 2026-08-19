@@ -9,9 +9,14 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.db.models import Q
 
-from apps.catalog.models import Disease
-from apps.catalog.models import BodyPart
-from apps.catalog.models import Symptom
+from apps.assistant.region_match import (
+    distinctive_terms,
+    filter_condition_names,
+    region_name_hints,
+    region_score,
+    regions_from_body_parts,
+)
+from apps.catalog.models import BodyPart, Disease, Symptom
 from apps.core.gemini import GeminiConfigError, generate_json
 from apps.medic.models import FaqItem
 
@@ -24,6 +29,10 @@ _SYSTEM = """Ты медицинский информационный помощ
 - Обязательно укажи, что нужна очная консультация врача.
 - Ответ строго JSON-объект на русском по схеме из запроса пользователя.
 - Учитывай только переданный контекст справочника и симптомы; не выдумывай редкие болезни без оснований.
+- Локализация обязательна: если указана часть тела (например «правая рука»),
+  предлагай только состояния этой области. Не предлагай боль в горле, груди, лице,
+  животе, если жалобы про руку, ногу или другой конкретный сегмент.
+- Не используй в ответе заболевания только потому что в названии есть слово «боль».
 - Пиши кратко.
 """
 
@@ -115,27 +124,41 @@ def _soft_ai_timeout_s() -> float:
     return max(5.0, min(configured, 14.0))
 
 
-def _catalog_slice(symptoms: str, *, limit: int = 8) -> list[dict[str, Any]]:
-    """Prefer fast name match; description scan only if name matches empty."""
-    q = symptoms.strip()
-    if len(q) < 2:
+def _catalog_slice(
+    symptoms: str,
+    *,
+    body_parts_resolved: list[dict[str, Any]] | None = None,
+    body_parts_s: str = "",
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    """Match by distinctive phrases + body region. Never search by bare «боль»."""
+    terms = distinctive_terms(symptoms, body_parts_s)
+    regions = regions_from_body_parts(body_parts_resolved, body_parts_s)
+    if not terms and not regions:
         return []
-    tokens = [t for t in q.replace(",", " ").replace("\n", " ").split() if len(t) >= 3][:5]
+
     qs = Disease.objects.all().only("id", "name", "description")
     cond = Q()
-    for t in tokens:
-        cond |= Q(name__icontains=t)
-    if not tokens:
-        cond = Q(name__icontains=q[:64])
-    rows = list(qs.filter(cond).distinct().order_by("name")[:limit])
-    if not rows:
-        needle = max(tokens, key=len) if tokens else q[:40]
-        if len(needle) >= 4:
-            rows = list(
-                Disease.objects.filter(Q(name__icontains=needle) | Q(description__icontains=needle))
-                .only("id", "name", "description")
-                .order_by("name")[:limit]
-            )
+    for term in terms[:12]:
+        cond |= Q(name__icontains=term)
+        if " " not in term and len(term) >= 5:
+            cond |= Q(description__icontains=term)
+    if regions:
+        for hint in region_name_hints(regions):
+            cond |= Q(name__icontains=hint)
+    if not cond:
+        return []
+
+    # Pull a wider pool, then rank/filter so «Боль в горле» cannot beat «Боль в руке».
+    pool = list(qs.filter(cond).distinct()[:80])
+    scored: list[tuple[int, Any]] = []
+    for d in pool:
+        sc = region_score(d.name, d.description or "", regions, terms)
+        if sc is None:
+            continue
+        scored.append((sc, d))
+    scored.sort(key=lambda item: (-item[0], item[1].name))
+    rows = [d for _sc, d in scored[:limit]]
     return [{"id": d.id, "name": d.name, "description": (d.description or "")[:280]} for d in rows]
 
 
@@ -222,8 +245,14 @@ def run_diagnosis(
     symptoms_from_ids, symptoms_resolved = _symptoms_text_from_ids(symptom_ids)
     body_parts_s, body_parts_resolved = _body_parts_from_ids(body_part_ids)
     combined_symptoms = "\n".join([s for s in [symptoms_from_ids.strip(), (symptoms_text or "").strip()] if s])
+    match_terms = distinctive_terms(combined_symptoms, body_parts_s)
+    match_regions = regions_from_body_parts(body_parts_resolved, body_parts_s)
 
-    catalog = _catalog_slice(combined_symptoms)
+    catalog = _catalog_slice(
+        combined_symptoms,
+        body_parts_resolved=body_parts_resolved,
+        body_parts_s=body_parts_s,
+    )
     faq = _faq_slice(combined_symptoms)
     catalog_json = json.dumps(catalog, ensure_ascii=False)
     faq_json = json.dumps(faq, ensure_ascii=False)
@@ -240,13 +269,16 @@ def run_diagnosis(
 }"""
 
     user_prompt = f"""Профиль: {_user_context_line(profile_user)}
-Части тела: {body_parts_s}
+Части тела (обязательная локализация): {body_parts_s}
 Температура: {temp_s}
 Давление: {bp_s}
 Симптомы: {symptoms_from_ids or "не указано"}
 Уточнения: {(symptoms_text or "").strip() or "не указано"}
-Справочник: {catalog_json}
+Справочник (уже отфильтрован по локализации): {catalog_json}
 FAQ: {faq_json}
+
+Запрещено предлагать заболевания другой области тела.
+Если часть тела — рука, нельзя возвращать «боль в горле», «боль в груди», «лицевая боль».
 {schema_hint}"""
 
     soft_timeout = _soft_ai_timeout_s()
@@ -292,12 +324,17 @@ FAQ: {faq_json}
     if not ai.get("possible_conditions") and catalog:
         ai["possible_conditions"] = _fallback_ai(catalog, reason="empty_ai").get("possible_conditions")
 
-    medical = build_medical_payload(ai, matched)
-    # UI-safe strings (no {name:…, rationale:…} Map dumps in Flutter).
     conditions_raw = ai.get("possible_conditions") or []
     conditions_text = format_possible_conditions(conditions_raw, limit=8)
+    if match_regions:
+        filtered = filter_condition_names(conditions_text, regions=match_regions, terms=match_terms)
+        conditions_text = filtered or [c["name"] for c in catalog[:8] if c.get("name")]
     if not conditions_text and matched:
         conditions_text = [c["name"] for c in matched[:8] if c.get("name")]
+    if not conditions_text and catalog:
+        conditions_text = [c["name"] for c in catalog[:8] if c.get("name")]
+    ai["possible_conditions"] = conditions_text
+    medical = build_medical_payload(ai, matched)
 
     return {
         "symptoms_resolved": symptoms_resolved,

@@ -101,9 +101,19 @@ def extract_drug_slugs_from_html(html: str) -> list[str]:
     return slugs
 
 
+def _html_to_text(html: str) -> str:
+    text = re.sub(r"(?i)<br\s*/?>", "\n", html or "")
+    text = re.sub(r"(?i)</(p|div|h[1-6]|li|tr|section)>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+
 def _extract_labeled_paragraph(html: str, label: str) -> str:
     m = re.search(
-        rf">{re.escape(label)}<[\s\S]{{0,800}}?<p[^>]*>(.*?)</p>",
+        rf">{re.escape(label)}<[\s\S]{{0,4000}}?<p[^>]*>(.*?)</p>",
         html,
         re.I,
     )
@@ -113,7 +123,9 @@ def _extract_labeled_paragraph(html: str, label: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def parse_drug_detail(html: str, *, slug: str) -> dict[str, str]:
+def parse_drug_detail(html: str, *, slug: str) -> dict[str, Any]:
+    from apps.catalog.instruction_sections import SECTION_DEFS, build_drug_sections, parse_labeled_blocks
+
     name = _slug_to_title(slug)
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
     if h1:
@@ -122,38 +134,57 @@ def parse_drug_detail(html: str, *, slug: str) -> dict[str, str]:
         if "(" in name:
             name = name.split("(", 1)[0].strip()
 
-    description = ""
-    for label in ("Фармакологическое действие", "Показания к применению"):
-        chunk = _extract_labeled_paragraph(html, label)
-        if chunk:
-            description = chunk if not description else f"{description} {chunk}"
-            if len(description) >= 900:
-                break
-    description = description[:2000]
+    plain = _html_to_text(html)
+    for _key, title, aliases in SECTION_DEFS:
+        for alias in (title, *aliases):
+            plain = re.sub(
+                rf"(?<!\n)({re.escape(alias)})",
+                r"\n\1\n",
+                plain,
+                count=1,
+                flags=re.I,
+            )
 
-    instructions_parts: list[str] = []
-    for label in (
-        "Способ применения и дозы",
-        "Способ применения",
-        "Противопоказания",
-        "Особые указания",
-    ):
-        chunk = _extract_labeled_paragraph(html, label)
-        if chunk:
-            instructions_parts.append(f"{label}: {chunk}")
-    instructions = "\n\n".join(instructions_parts)[:4000]
+    labeled = parse_labeled_blocks(plain)
+    if not labeled:
+        for key, title, aliases in SECTION_DEFS:
+            for alias in (title, *aliases):
+                chunk = _extract_labeled_paragraph(html, alias)
+                if chunk:
+                    labeled[key] = chunk
+                    break
 
-    dosage = ""
-    m_form = re.search(
-        r"Лекарственная форма[\s\S]{0,600}?<p[^>]*>(.*?)</p>",
-        html,
-        re.I,
+    sections = build_drug_sections(
+        name=name,
+        description="",
+        instructions="\n\n".join(
+            f"{title}\n{labeled[key]}" for key, title, _a in SECTION_DEFS if labeled.get(key)
+        ),
+        dosage=labeled.get("composition", ""),
+        stored=labeled,
     )
-    if m_form:
-        text = re.sub(r"<[^>]+>", " ", m_form.group(1))
-        dosage = re.sub(r"\s+", " ", text).strip()[:255]
+    instructions = "\n\n".join(f"{row['title']}\n{row['text']}" for row in sections)[:20000]
+    description = (
+        labeled.get("action") or labeled.get("indications") or labeled.get("composition") or ""
+    )[:4000]
+    dosage = (labeled.get("composition") or "")[:255]
+    if not dosage:
+        m_form = re.search(
+            r"Лекарственная форма[\s\S]{0,800}?<p[^>]*>(.*?)</p>",
+            html,
+            re.I,
+        )
+        if m_form:
+            text = re.sub(r"<[^>]+>", " ", m_form.group(1))
+            dosage = re.sub(r"\s+", " ", text).strip()[:255]
 
-    return {"name": name[:255], "description": description, "dosage": dosage, "instructions": instructions}
+    return {
+        "name": name[:255],
+        "description": description,
+        "dosage": dosage,
+        "instructions": instructions,
+        "sections": labeled,
+    }
 
 
 def drug_item_from_slug(
@@ -165,8 +196,8 @@ def drug_item_from_slug(
     name = (detail.get("name") or _slug_to_title(slug)).strip()
     return {
         "name": name[:255],
-        "description": (detail.get("description") or f"Источник: vidal.ru/drugs/{slug}")[:2000],
-        "instructions": (detail.get("instructions") or "")[:4000],
+        "description": (detail.get("description") or f"Источник: vidal.ru/drugs/{slug}")[:4000],
+        "instructions": (detail.get("instructions") or "")[:20000],
         "dosage": (detail.get("dosage") or "")[:255],
         "external_source": "vidal",
         "external_id": slug,
