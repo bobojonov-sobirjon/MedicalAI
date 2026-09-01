@@ -51,6 +51,7 @@ def _public_result(full_result: dict) -> dict:
         "disclaimer": full_result.get("disclaimer") or ai.get("disclaimer") or "",
         "sources": full_result.get("sources") or ai.get("sources") or [],
         "possible_conditions": conditions_text,
+        "ai_mode": full_result.get("ai_mode") or "llm",
         "ai": ai,
     }
 

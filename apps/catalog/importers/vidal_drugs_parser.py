@@ -101,14 +101,137 @@ def extract_drug_slugs_from_html(html: str) -> list[str]:
     return slugs
 
 
+def _html_fragment_to_markdown(html: str) -> str:
+    import html as html_lib
+
+    from apps.catalog.utils import format_section_markdown
+
+    text = html or ""
+    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", text)
+    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?is)<noscript[^>]*>.*?</noscript>", " ", text)
+
+    def _table_to_md(match: re.Match[str]) -> str:
+        table_html = match.group(0)
+        rows: list[list[str]] = []
+        for tr in re.findall(r"(?is)<tr[^>]*>(.*?)</tr>", table_html):
+            cells = re.findall(r"(?is)<t[dh][^>]*>(.*?)</t[dh]>", tr)
+            cleaned = [
+                html_lib.unescape(re.sub(r"<[^>]+>", " ", c))
+                for c in cells
+            ]
+            cleaned = [re.sub(r"\s+", " ", c).strip() for c in cleaned]
+            if any(cleaned):
+                rows.append(cleaned)
+        if not rows:
+            return "\n"
+        if all(len(r) == 2 for r in rows):
+            head_a, head_b = rows[0]
+            lines = []
+            if head_a:
+                lines.append(f"**{head_a}**" + (f" ({head_b})" if head_b else ""))
+            for a, b in rows[1:]:
+                if a and b:
+                    lines.append(f"- {a} — {b}")
+                elif a:
+                    lines.append(f"- {a}")
+            return "\n" + "\n".join(lines) + "\n"
+        return "\n" + "\n".join(" — ".join(c for c in row if c) for row in rows) + "\n"
+
+    text = re.sub(r"(?is)<table[^>]*>.*?</table>", _table_to_md, text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p>", "\n\n", text)
+    text = re.sub(r"(?i)<li[^>]*>", "\n- ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    from apps.catalog.utils import format_section_markdown
+
+    return format_section_markdown(text)
+
+
+def _strip_product_suffix(title: str) -> str:
+    title = re.sub(r"<[^>]+>", " ", title or "")
+    title = re.sub(r"\s+", " ", title).strip(" :")
+    title = re.sub(r"(?i)\s+продукта\s+\S.*$", "", title).strip(" :")
+    return title
+
+
+def _cut_ads_html(html: str) -> str:
+    return re.split(
+        r'(?is)<div[^>]*class="[^"]*\bmkb\b|<style\b|<script\b|'
+        r'<div[^>]*id="yandex|<div[^>]*class="[^"]*\byad\b|'
+        r"<!--noindex-->|<div[^>]*class=\"share-buttons\"|"
+        r'<div[^>]*id="banners"|проверено врачом|id="validated"|class="footer',
+        html or "",
+        maxsplit=1,
+    )[0]
+
+
+_BLOCK_HEAD_RE = re.compile(
+    r'(?is)<(?:h2|div|span)[^>]*class="[^"]*\bblock-head\b[^"]*"[^>]*>(.*?)</(?:h2|div|span)>'
+)
+
+
+def extract_vidal_blocks(html: str) -> dict[str, str]:
+    """Pull only .block-head + following content; skip ads/scripts/MKB tables."""
+    from apps.catalog.instruction_sections import _norm_header
+
+    raw = html or ""
+    raw = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", raw)
+    raw = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", raw)
+    parts = _BLOCK_HEAD_RE.split(raw)
+    labeled: dict[str, str] = {}
+    i = 1
+    while i < len(parts):
+        title = _strip_product_suffix(parts[i])
+        body_html = _cut_ads_html(parts[i + 1] if i + 1 < len(parts) else "")
+        i += 2
+        if re.search(r"(?i)мкб|открыть список", title):
+            continue
+        body = _html_fragment_to_markdown(body_html)
+        mapped = _norm_header(title)
+        if not mapped:
+            if re.search(r'(?i)infopage|info-pages|алтайвитамин|произведен', body_html + title):
+                mapped = "contacts"
+                if title and title.casefold() not in {"контакты для обращений", "контакты"}:
+                    body = f"**{title}**\n\n{body}".strip() if body else f"**{title}**"
+            else:
+                continue
+        if len(body) < 8:
+            continue
+        if mapped == "contacts":
+            prev = labeled.get("contacts", "")
+            labeled["contacts"] = _merge_contact_text(prev, body)
+            continue
+        prev = labeled.get(mapped, "")
+        labeled[mapped] = f"{prev}\n\n{body}".strip() if prev else body
+    return labeled
+
+
+def _merge_contact_text(prev: str, incoming: str) -> str:
+    chunks: list[str] = []
+    seen: set[str] = set()
+    for part in f"{prev}\n{incoming}".split("\n"):
+        key = re.sub(r"\s+", " ", part).strip().casefold()
+        if len(key) < 3 or key in seen:
+            continue
+        seen.add(key)
+        chunks.append(part.strip())
+    return "\n".join(chunks).strip()
+
+
 def _html_to_text(html: str) -> str:
-    text = re.sub(r"(?i)<br\s*/?>", "\n", html or "")
+    from apps.catalog.utils import clean_display_text
+
+    text = html or ""
+    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", text)
+    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
+    text = re.sub(r"(?is)<noscript[^>]*>.*?</noscript>", " ", text)
+    text = re.sub(r'(?is)<div[^>]*class="[^"]*\bmkb\b[^"]*"[^>]*>.*?</div>', " ", text)
+    text = re.sub(r'(?is)<div[^>]*id="yandex_rtb[^"]*"[^>]*>.*?</div>', " ", text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
     text = re.sub(r"(?i)</(p|div|h[1-6]|li|tr|section)>", "\n", text)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{2,}", "\n", text)
-    return text.strip()
+    return clean_display_text(text)
 
 
 def _extract_labeled_paragraph(html: str, label: str) -> str:
@@ -125,6 +248,7 @@ def _extract_labeled_paragraph(html: str, label: str) -> str:
 
 def parse_drug_detail(html: str, *, slug: str) -> dict[str, Any]:
     from apps.catalog.instruction_sections import SECTION_DEFS, build_drug_sections, parse_labeled_blocks
+    from apps.catalog.utils import flatten_display_text, format_section_markdown
 
     name = _slug_to_title(slug)
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
@@ -134,40 +258,35 @@ def parse_drug_detail(html: str, *, slug: str) -> dict[str, Any]:
         if "(" in name:
             name = name.split("(", 1)[0].strip()
 
-    plain = _html_to_text(html)
-    for _key, title, aliases in SECTION_DEFS:
-        for alias in (title, *aliases):
-            plain = re.sub(
-                rf"(?<!\n)({re.escape(alias)})",
-                r"\n\1\n",
-                plain,
-                count=1,
-                flags=re.I,
-            )
-
-    labeled = parse_labeled_blocks(plain)
-    if not labeled:
+    labeled = extract_vidal_blocks(html)
+    if len(labeled) < 2:
+        plain = _html_to_text(html)
+        from_blocks = parse_labeled_blocks(plain)
+        for key, text in from_blocks.items():
+            if key not in labeled or len(text) > len(labeled[key]):
+                labeled[key] = text
+    if len(labeled) < 2:
         for key, title, aliases in SECTION_DEFS:
+            if labeled.get(key):
+                continue
             for alias in (title, *aliases):
                 chunk = _extract_labeled_paragraph(html, alias)
                 if chunk:
-                    labeled[key] = chunk
+                    labeled[key] = format_section_markdown(chunk)
                     break
 
     sections = build_drug_sections(
         name=name,
         description="",
-        instructions="\n\n".join(
-            f"{title}\n{labeled[key]}" for key, title, _a in SECTION_DEFS if labeled.get(key)
-        ),
+        instructions="",
         dosage=labeled.get("composition", ""),
         stored=labeled,
     )
     instructions = "\n\n".join(f"{row['title']}\n{row['text']}" for row in sections)[:20000]
-    description = (
+    description = flatten_display_text(
         labeled.get("action") or labeled.get("indications") or labeled.get("composition") or ""
     )[:4000]
-    dosage = (labeled.get("composition") or "")[:255]
+    dosage = flatten_display_text(labeled.get("composition") or "")[:255]
     if not dosage:
         m_form = re.search(
             r"Лекарственная форма[\s\S]{0,800}?<p[^>]*>(.*?)</p>",
@@ -176,7 +295,7 @@ def parse_drug_detail(html: str, *, slug: str) -> dict[str, Any]:
         )
         if m_form:
             text = re.sub(r"<[^>]+>", " ", m_form.group(1))
-            dosage = re.sub(r"\s+", " ", text).strip()[:255]
+            dosage = flatten_display_text(text)[:255]
 
     return {
         "name": name[:255],

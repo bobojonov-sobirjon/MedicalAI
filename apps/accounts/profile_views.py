@@ -144,4 +144,40 @@ class ProfileDetailView(APIView):
         deleted, _ = FamilyLink.objects.filter(owner=request.user, member_id=profile_id).delete()
         if not deleted:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        if getattr(request.user, "active_profile_id", None) == profile_id:
+            request.user.active_profile_id = None
+            request.user.save(update_fields=["active_profile_id"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProfileActivateView(APIView):
+    """Переключить «кто сейчас в приложении»: главная и история — этого человека."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=[TAG],
+        summary="Войти в профиль (главная, не редактирование)",
+        description=(
+            "Тап по карточке в карусели: сохраняет активный профиль и возвращает `open: home`. "
+            "Редактирование — отдельно PATCH `/api/me/profiles/{id}/` (иконка карандаша). "
+            "Дальше в запросы помощника/истории можно не слать `subject_user_id` — берётся активный."
+        ),
+        responses={200: ProfileCardSerializer},
+    )
+    def post(self, request, profile_id: int):
+        from apps.accounts.family_access import resolve_profile_user
+
+        profile = resolve_profile_user(request.user, profile_id)
+        if not profile:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        request.user.active_profile_id = profile.pk
+        request.user.save(update_fields=["active_profile_id"])
+        ctx, _ = _profile_list_context(request, request.user)
+        return Response(
+            {
+                "open": "home",
+                "active_profile_id": profile.pk,
+                "profile": ProfileCardSerializer(profile, context=ctx).data,
+            }
+        )

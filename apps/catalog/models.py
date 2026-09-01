@@ -15,6 +15,12 @@ class TimeStampedModel(models.Model):
 class Disease(TimeStampedModel):
     name = models.CharField("Название", max_length=255, unique=True, db_index=True)
     description = models.TextField("Описание", blank=True, default="")
+    instructions = models.TextField(
+        "Подробное описание (разделы)",
+        blank=True,
+        default="",
+        help_text="Полный текст со спойлерами: общие сведения, причины, симптомы, лечение…",
+    )
 
     class Meta:
         verbose_name = "Заболевание"

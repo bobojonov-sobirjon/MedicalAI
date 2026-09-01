@@ -38,24 +38,43 @@ class CatalogImportResult:
         self.errors.extend(other.errors)
 
 
-def _upsert_disease(name: str, description: str, *, dry_run: bool) -> tuple[str, Disease | None]:
+def _upsert_disease(
+    name: str,
+    description: str,
+    *,
+    dry_run: bool,
+    instructions: str = "",
+) -> tuple[str, Disease | None]:
     name = name.strip()
     if not name:
         return "skip", None
     existing = Disease.objects.filter(name__iexact=name).first()
     if existing:
+        changed = False
         if description and (
             not existing.description
             or len(description.strip()) > len((existing.description or "").strip())
         ):
-            if not dry_run:
-                existing.description = description
-                existing.save(update_fields=["description", "updated_at"])
-            return "updated", existing
-        return "exists", existing
+            existing.description = description
+            changed = True
+        if instructions and (
+            not getattr(existing, "instructions", "")
+            or len(instructions.strip()) > len((getattr(existing, "instructions", "") or "").strip())
+        ):
+            existing.instructions = instructions
+            changed = True
+        if changed and not dry_run:
+            fields = ["description", "updated_at"]
+            if hasattr(existing, "instructions"):
+                fields.insert(1, "instructions")
+            existing.save(update_fields=fields)
+        return "updated" if changed else "exists", existing
     if dry_run:
         return "created", None
-    obj = Disease.objects.create(name=name, description=description)
+    kwargs = {"name": name, "description": description}
+    if instructions:
+        kwargs["instructions"] = instructions
+    obj = Disease.objects.create(**kwargs)
     return "created", obj
 
 

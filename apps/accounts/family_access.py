@@ -18,9 +18,11 @@ def allowed_profiles_qs(owner: CustomUser):
 
 
 def resolve_profile_user(owner: CustomUser, profile_user_id: int | None) -> CustomUser | None:
-    """Return profile user if owner may act on their behalf; default is owner."""
+    """Return profile user if owner may act on their behalf; default is active or owner."""
     if profile_user_id is None:
-        return owner
+        profile_user_id = getattr(owner, "active_profile_id", None)
+        if not profile_user_id:
+            return owner
     if profile_user_id == owner.pk:
         return owner
     member = CustomUser.objects.filter(pk=profile_user_id).first()

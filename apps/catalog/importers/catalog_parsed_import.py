@@ -27,7 +27,10 @@ def import_diseases_json(path: Path, *, dry_run: bool = False) -> CatalogImportR
     for row in load_catalog_json(path):
         name = row.get("name") or ""
         description = row.get("description") or ""
-        status, _ = _upsert_disease(name, description, dry_run=dry_run)
+        instructions = row.get("instructions") or ""
+        status, _ = _upsert_disease(
+            name, description, dry_run=dry_run, instructions=instructions
+        )
         if status == "created":
             result.diseases_created += 1
         elif status == "updated":

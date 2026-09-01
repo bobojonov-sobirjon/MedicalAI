@@ -351,6 +351,7 @@ FAQ: {faq_json}
         "answer": medical["answer"],
         "disclaimer": medical["disclaimer"],
         "sources": medical["sources"],
+        "ai_mode": "catalog" if ai_error else "llm",
         "ai": {
             "summary": ai.get("summary", ""),
             # IMPORTANT: strings only — Flutter must not render Map.toString().

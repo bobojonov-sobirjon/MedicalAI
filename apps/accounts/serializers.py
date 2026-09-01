@@ -143,8 +143,9 @@ class UserMeSerializer(serializers.ModelSerializer):
             "chronic_diseases",
             "had_covid",
             "useful_tips_subscribed",
+            "active_profile_id",
         )
-        read_only_fields = ("id", "email", "phone_number")
+        read_only_fields = ("id", "email", "phone_number", "active_profile_id")
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

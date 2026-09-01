@@ -13,6 +13,7 @@ class ProfileCardSerializer(serializers.ModelSerializer):
 
     avatar_url = serializers.SerializerMethodField()
     is_owner = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
     label = serializers.SerializerMethodField()
     link_id = serializers.SerializerMethodField()
 
@@ -21,9 +22,9 @@ class ProfileCardSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "is_owner",
+            "is_active",
             "label",
             "link_id",
-            "username",
             "first_name",
             "last_name",
             "nickname",
@@ -46,6 +47,14 @@ class ProfileCardSerializer(serializers.ModelSerializer):
     def get_is_owner(self, obj: CustomUser) -> bool:
         owner_id = self.context.get("owner_id")
         return owner_id is not None and obj.pk == owner_id
+
+    def get_is_active(self, obj: CustomUser) -> bool:
+        request = self.context.get("request")
+        owner = getattr(request, "user", None) if request else None
+        active_id = getattr(owner, "active_profile_id", None) if owner else None
+        if not active_id:
+            return bool(self.context.get("owner_id") == obj.pk)
+        return obj.pk == active_id
 
     def get_label(self, obj: CustomUser) -> str:
         labels = self.context.get("member_labels") or {}

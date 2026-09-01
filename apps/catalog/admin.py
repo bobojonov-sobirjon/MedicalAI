@@ -7,6 +7,8 @@ from .models import BodyPart, Disease, Drug, DrugViewLog, Symptom
 class DiseaseAdmin(admin.ModelAdmin):
     list_display = ("name", "created_at", "updated_at")
     search_fields = ("name",)
+    fields = ("name", "description", "instructions", "created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(Symptom)

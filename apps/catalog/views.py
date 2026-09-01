@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.db.models import Case, IntegerField, Prefetch, Q, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
@@ -10,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import BodyPart, Disease, Drug, Symptom
+from .utils import strip_mkb_public_text
 from .serializers import (
     BodyPartSerializer,
     DiseaseDetailSerializer,
@@ -63,6 +65,22 @@ def _active_drugs_qs():
     return qs
 
 
+def _disease_lite_rows(rows, *, names_only: bool = False) -> list[dict]:
+    out: list[dict] = []
+    for obj in rows:
+        item = {"id": obj.id, "name": obj.name}
+        if names_only:
+            out.append(item)
+            continue
+        preview = strip_mkb_public_text(obj.description or "")
+        if len(preview) > 160:
+            preview = preview[:159].rstrip() + "…"
+        item["description"] = preview
+        item["description_preview"] = preview
+        out.append(item)
+    return out
+
+
 class PublicDiseaseListView(APIView):
     permission_classes = [AllowAny]
 
@@ -73,25 +91,23 @@ class PublicDiseaseListView(APIView):
             OpenApiParameter(name="q", required=False, type=str, description="Поиск по названию"),
             OpenApiParameter(name="search", required=False, type=str, description="Алиас q"),
             OpenApiParameter(name="name", required=False, type=str, description="Алиас q (история болезней)"),
+            OpenApiParameter(name="page", required=False, type=int),
+            OpenApiParameter(name="page_size", required=False, type=int),
+            OpenApiParameter(name="picker", required=False, type=int, description="1 = только id+name"),
             OpenApiParameter(name="limit", required=False, type=int),
         ],
     )
     def get(self, request):
-        """
-        Flutter history picker:
-        - sheet ochilganda `q` siz chaqiriladi va local filter qiladi
-        - shuning uchun `q` bo'lmasa TO'LIQ katalog (array) qaytaramiz
-        Response: JSON array (List), NOT {results: ...}
-        """
         q = _search_query(request)
+        picker = _bool_param(request, "picker") is True or _query_param(request, "picker") in {"1", "true"}
         qs = Disease.objects.all().only("id", "name", "description").order_by("name")
 
         if q:
             try:
-                limit = min(int(request.query_params.get("limit") or 100), 500)
+                limit = min(int(request.query_params.get("limit") or 50), 100)
             except (TypeError, ValueError):
-                limit = 100
-            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+                limit = 50
+            qs = qs.filter(Q(name__icontains=q))
             qs = qs.annotate(
                 _rank=Case(
                     When(name__iexact=q, then=Value(0)),
@@ -101,16 +117,31 @@ class PublicDiseaseListView(APIView):
                     output_field=IntegerField(),
                 )
             ).order_by("_rank", "name")
-            rows = list(qs[:limit])
-            return Response(DiseaseSearchSerializer(rows, many=True, context={"request": request}).data)
+            return Response(_disease_lite_rows(list(qs[:limit]), names_only=picker))
 
-        # Full catalog for local FE filter (history «Выберите болезнь»).
-        try:
-            limit = min(int(request.query_params.get("limit") or 50000), 50000)
-        except (TypeError, ValueError):
-            limit = 50000
-        rows = list(qs[:limit])
-        return Response(DiseaseSearchSerializer(rows, many=True, context={"request": request}).data)
+        if picker:
+            payload = cache.get("catalog:diseases:picker:v2")
+            if payload is None:
+                payload = list(qs.values("id", "name"))
+                cache.set("catalog:diseases:picker:v2", payload, 300)
+            return Response(payload)
+
+        page = _int_param(request, "page", 1, min_v=1, max_v=10_000)
+        page_size = _int_param(request, "page_size", 50, min_v=1, max_v=100)
+        total = qs.count()
+        offset = (page - 1) * page_size
+        rows = list(qs[offset : offset + page_size])
+        has_next = offset + page_size < total
+        return Response(
+            {
+                "count": total,
+                "page": page,
+                "page_size": page_size,
+                "next": page + 1 if has_next else None,
+                "previous": page - 1 if page > 1 else None,
+                "results": _disease_lite_rows(rows),
+            }
+        )
 
 
 class PublicDiseaseDetailView(APIView):
@@ -119,6 +150,13 @@ class PublicDiseaseDetailView(APIView):
     @extend_schema(
         tags=["Заболевания"],
         summary="Получить заболевание (с лекарствами)",
+        description=(
+            "Список лекарств у болезни больше не обрезается слепо до 40 по алфавиту "
+            "(из‑за этого «Креон» пропадал при 200+ препаратах).\n\n"
+            "Опционально: `highlight_drug_id` — препарат, с которого открыли болезнь "
+            "(всегда попадёт в `drugs`); `q` — фильтр по названию препарата; "
+            "`limit` — сколько препаратов вернуть (по умолчанию 300)."
+        ),
         parameters=[
             OpenApiParameter(
                 name="include_drugs",
@@ -126,29 +164,51 @@ class PublicDiseaseDetailView(APIView):
                 type=bool,
                 description="false — только карточка болезни без списка лекарств (быстро).",
             ),
+            OpenApiParameter(
+                name="highlight_drug_id",
+                required=False,
+                type=int,
+                description="ID препарата из карточки лекарства (круговая навигация).",
+            ),
+            OpenApiParameter(name="q", required=False, type=str, description="Фильтр препаратов по названию"),
+            OpenApiParameter(name="limit", required=False, type=int, description="Лимит препаратов (40–1000), default 300"),
         ],
     )
     def get(self, request, pk: int):
         include_drugs = _bool_param(request, "include_drugs")
+        obj = get_object_or_404(
+            Disease.objects.only("id", "name", "description", "instructions", "created_at", "updated_at"),
+            pk=pk,
+        )
         if include_drugs is False:
-            obj = get_object_or_404(Disease.objects.all(), pk=pk)
             return Response(
                 DiseaseDetailSerializer(obj, context={"request": request, "skip_drugs": True}).data
             )
 
-        # Light prefetch: drugs only, NO nested diseases (that caused hang/500).
-        obj = get_object_or_404(
-            Disease.objects.prefetch_related(
-                Prefetch(
-                    "drugs",
-                    queryset=_active_drugs_qs()
-                    .only("id", "name", "description", "dosage", "image", "rating")
-                    .order_by("name"),
-                )
-            ),
-            pk=pk,
+        highlight_raw = _query_param(request, "highlight_drug_id")
+        highlight_id = None
+        if highlight_raw.isdigit():
+            highlight_id = int(highlight_raw)
+
+        try:
+            drugs_limit = int(request.query_params.get("limit") or 300)
+        except (TypeError, ValueError):
+            drugs_limit = 300
+        drugs_limit = max(40, min(drugs_limit, 1000))
+        drug_q = _search_query(request)
+
+        obj = get_object_or_404(Disease.objects.all(), pk=pk)
+        return Response(
+            DiseaseDetailSerializer(
+                obj,
+                context={
+                    "request": request,
+                    "highlight_drug_id": highlight_id,
+                    "drugs_limit": drugs_limit,
+                    "drug_q": drug_q,
+                },
+            ).data
         )
-        return Response(DiseaseDetailSerializer(obj, context={"request": request}).data)
 
 
 class SymptomSearchView(APIView):
@@ -254,9 +314,7 @@ class PublicDrugListView(APIView):
             rows = list(qs.only("id", "name", "dosage")[:limit])
             return Response(DrugPickerSerializer(rows, many=True).data)
 
-        need_disease_count = has_diseases is not None or include_diseases
-        if need_disease_count:
-            qs = qs.annotate(diseases_count=Count("diseases", distinct=True))
+        qs = qs.annotate(diseases_count=Count("diseases", distinct=True))
 
         if disease_id_raw:
             try:
@@ -380,11 +438,8 @@ class PublicDrugDetailView(APIView):
         ],
     )
     def get(self, request, pk: int):
-        include_related = _bool_param(request, "include_related")
-        if include_related is False:
-            obj = get_object_or_404(_active_drugs_qs(), pk=pk)
-            return Response(DrugSerializer(obj, context={"request": request, "skip_related": True}).data)
-
+        # include_related=false: still return diseases (light), skip only heavy extras.
+        # Prefetch diseases so «Связанные заболевания» is never empty when links exist.
         obj = get_object_or_404(
             _active_drugs_qs().prefetch_related(
                 Prefetch(
@@ -394,4 +449,8 @@ class PublicDrugDetailView(APIView):
             ),
             pk=pk,
         )
-        return Response(DrugSerializer(obj, context={"request": request}).data)
+        include_related = _bool_param(request, "include_related")
+        ctx = {"request": request}
+        if include_related is False:
+            ctx["skip_related"] = True  # kept for backward compat; diseases still returned
+        return Response(DrugSerializer(obj, context=ctx).data)

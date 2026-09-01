@@ -67,9 +67,7 @@ def row_to_disease_item(code: str, name: str, level: int) -> dict[str, Any]:
 
     code = code.strip().upper()
     name = clean_disease_display_name(name.strip())
-    description = f"МКБ-10: {code}"
-    if level >= 3:
-        description = f"{description}. Код диагноза по Международной классификации болезней."
+    description = ""  # patient text is filled later (Vidal/AI); never store MKB code as description
     return {
         "name": name[:255],
         "description": description[:2000],

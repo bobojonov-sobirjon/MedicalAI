@@ -30,6 +30,12 @@ class CustomUser(AbstractUser):
     had_covid = models.BooleanField("Переболели Covid-19", null=True, blank=True)
     pin_code_hash = models.CharField("Пин-код (хэш)", max_length=128, blank=True, default="")
     useful_tips_subscribed = models.BooleanField("Подписка на полезные советы", default=False)
+    active_profile_id = models.PositiveIntegerField(
+        "Активный семейный профиль",
+        blank=True,
+        null=True,
+        help_text="id пользователя, от имени которого сейчас ведётся главная/история. Пусто = владелец.",
+    )
 
     class Meta:
         verbose_name = "Пользователь"

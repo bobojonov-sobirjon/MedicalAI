@@ -12,7 +12,7 @@ from .views import (
     ForgotPasswordResetView,
     DemoCredentialsView,
 )
-from .profile_views import ProfileDetailView, ProfileListView
+from .profile_views import ProfileActivateView, ProfileDetailView, ProfileListView
 
 
 urlpatterns = [
@@ -27,5 +27,6 @@ urlpatterns = [
     path("auth/me/", MeView.as_view(), name="auth-me"),
     path("auth/social/", SocialLoginView.as_view(), name="auth-social"),
     path("me/profiles/", ProfileListView.as_view(), name="me-profiles"),
+    path("me/profiles/<int:profile_id>/activate/", ProfileActivateView.as_view(), name="me-profile-activate"),
     path("me/profiles/<int:profile_id>/", ProfileDetailView.as_view(), name="me-profile-detail"),
 ]
